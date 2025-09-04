@@ -84,15 +84,30 @@ def validate_user_config(user_cfg: dict) -> bool:
 
     return True
 
-def format_config(cfg: dict, indent: int = 0) -> str:
+def format_config(
+    cfg: dict,
+    indent: int = 0,
+    target_key: str = None,
+    alt_key: str = None,
+    ex_key: str = None,
+) -> str:
     lines = []
     pad = "  " * indent
+
     for k, v in cfg.items():
+        # исключаем ключ
+        if k == ex_key:
+            continue
+
+        # заменяем имя ключа
+        display_key = alt_key if k == target_key else k
+
         if isinstance(v, dict):
-            lines.append(f"{pad}• {k}:")
-            lines.append(format_config(v, indent + 1))
+            lines.append(f"{pad}• {display_key}:")
+            lines.append(format_config(v, indent + 1, target_key, alt_key, ex_key))
         else:
-            lines.append(f"{pad}• {k}: {v}")
+            lines.append(f"{pad}• {display_key}: {v}")
+
     return "\n".join(lines)
 
 
@@ -233,7 +248,13 @@ class TelegramUserInterface:
                 filtered_cfg[section] = section_data
 
         # Генерация текста настроек с сохранением структуры
-        pretty_cfg = format_config(filtered_cfg)
+        pretty_cfg = format_config(
+            cfg=filtered_cfg,
+            indent=0,
+            target_key="tp_cap_dep",
+            alt_key="tp_levels",
+            ex_key="tp_levels",
+        )
 
         await message.answer(
             f"📊 Текущий статус: {status}\n\n⚙ Настройки:\n{pretty_cfg}",

@@ -8,10 +8,10 @@ QUOTE_ASSET: str = "USDT"
 DIRECTION: str = "LONG"
 TEG_ANCHOR: str = "UPBIT LISTING"              
 
-# TG_BOT_TOKEN: str = "8232845447:AAEIdSZ0IeNxlTBTQ7I7G_QeAn4tOFgTE6Q" # bot token
-# TG_GROUP_ID: str = "-1002653345160" # id группы откуда парсить сигнал
-TG_BOT_TOKEN: str = "8304645115:AAE5HKrTclLDoRmE5W60vLRurbEH_fm-qyU" # -- токен бота (test)
-TG_GROUP_ID: str = "-1003053085303" # -- id группы откуда парсить сигнал (test)
+TG_BOT_TOKEN: str = "7976740718:AAE1xBujUM26JfvefRr1hkcA12yfUC9e9qk" # bot token
+TG_GROUP_ID: str = "-1002653345160" # id группы откуда парсить сигнал
+# TG_BOT_TOKEN: str = "8304645115:AAE5HKrTclLDoRmE5W60vLRurbEH_fm-qyU" # -- токен бота (test)
+# TG_GROUP_ID: str = "-1003053085303" # -- id группы откуда парсить сигнал (test)
 
 # //
 CAP_MULTIPLITER_TRUE: bool = False           # задействуем механизм зависомостей капы от множителя размера
@@ -68,15 +68,16 @@ INIT_USER_CONFIG = {
     "config": {
         "MEXC": {
             "proxy_url": None, # формат: http://zmEnP8Af:F7i34xHB@45.10.108.116:64762  (логин-пароль-адрес-порт)
-            # "api_key": "",
-            # "api_secret": "",
-            # "u_id": ""
-            "api_key": "mx0vglqofJZUljkoYU",
-            "api_secret": "c6700595729849759d4e89989a7e0ecc",
-            "u_id": "WEB312d5335e14964e300ff7fa976cf13e223c0cd7e650981884906413584fc4a3c"
+            "api_key": "",
+            "api_secret": "",
+            "u_id": ""
+            # "api_key": "mx0vglqofJZUljkoYU",
+            # "api_secret": "c6700595729849759d4e89989a7e0ecc",
+            # "u_id": "WEB242b9e58e0e4f2d55f184870de2a16a520bf1d3969a7240c821b19d308abf91b"
         },
         "fin_settings": {
             "margin_size": None,
+            "margin_mode": 2,
             "leverage": 5,
             "sl": 3.0,
             "sl_type": 2,
