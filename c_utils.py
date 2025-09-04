@@ -182,23 +182,16 @@ def sleep_generator(tp_len):
 def tp_levels_generator(
         cap: float,
         tp_order_volume: float,
-        tp_cap_dep: Dict,
+        tp_cap_dep: Dict[tuple[int, float], list[int]],
         use_default: bool = False
     ) -> list[tuple[float, float]]:
-    """
-    Генератор TP_LEVELS:
-    - cap: размер позиции
-    - tp_cap_dep: список кортежей (min_cap, max_cap, percentages)
-    - use_default: если True, возвращается TP_LEVELS_DEFAULT
-    """
     if use_default:
         return TP_LEVELS_DEFAULT
 
-    for min_cap, max_cap, percentages in tp_cap_dep.items():
+    for (min_cap, max_cap), percentages in tp_cap_dep.items():
         if min_cap <= cap <= max_cap:
             return [(p, tp_order_volume) for p in percentages]
 
-    # Если не попали в диапазон, вернуть дефолт
     return TP_LEVELS_DEFAULT
 
 def parse_range_key(rk: str) -> tuple[int, float]:
@@ -211,6 +204,17 @@ def parse_range_key(rk: str) -> tuple[int, float]:
         min_val = int(parts[0].strip()) * 1000
         max_val = int(parts[1].strip()) * 1000
     return (min_val, max_val)
+
+def normalize_tp_cap_dep(tp_cap_dep: dict) -> dict:
+    """Приводит ключи tp_cap_dep к формату (tuple)."""
+    normalized = {}
+    for k, v in tp_cap_dep.items():
+        if isinstance(k, tuple):
+            normalized[k] = v
+        else:
+            normalized[parse_range_key(k)] = v
+    return normalized
+
 
 class Utils:
     def __init__(
@@ -228,31 +232,37 @@ class Utils:
         self.chat_id = chat_id
 
     @staticmethod
-    def parse_precision(symbols_info: dict, symbol: str) -> dict | None:
+    def parse_precision(symbols_info: list[dict], symbol: str) -> dict | None:
         """
-        Возвращает настройки для qty и price в виде словаря:
+        Возвращает настройки для qty, price и макс. плеча в виде словаря:
         {
             "contract_precision": int,
             "price_precision": int,
             "contract_size": float,
             "price_unit": float,
-            "vol_unit": float
+            "vol_unit": float,
+            "max_leverage": int | None
         }
         Если символ не найден или данные пустые → None.
         """
-        # if not symbols_info or "data" not in symbols_info:
-        #     return None
-
         symbol_data = next((item for item in symbols_info if item.get("symbol") == symbol), None)
         if not symbol_data:
             return None
+
+        # обработка maxLeverage
+        raw_leverage = symbol_data.get("maxLeverage")
+        try:
+            max_leverage = int(float(raw_leverage)) if raw_leverage is not None else None
+        except (ValueError, TypeError):
+            max_leverage = None
 
         return {
             "contract_precision": symbol_data.get("volScale", 3),
             "price_precision": symbol_data.get("priceScale", 2),
             "contract_size": float(symbol_data.get("contractSize", 1)),
             "price_unit": float(symbol_data.get("priceUnit", 0.01)),
-            "vol_unit": float(symbol_data.get("volUnit", 1))
+            "vol_unit": float(symbol_data.get("volUnit", 1)),
+            "max_leverage": max_leverage
         }
         
     def contract_calc(

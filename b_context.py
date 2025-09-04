@@ -23,3 +23,4 @@ class BotContext:
         self.position_updated_event = asyncio.Event()
         self.orders_updated_event = asyncio.Event()
         self.bloc_async = asyncio.Lock()
+        self.symbol_locks: dict = {}

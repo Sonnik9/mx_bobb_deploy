@@ -38,6 +38,7 @@ class Synchronizer:
         self.chat_id = chat_id        
         self.fin_settings = self.context.users_configs[chat_id].get("config").get("fin_settings")
         self.tp_levels = self.fin_settings.get("tp_levels")    
+        self._first_update_done = False
 
         info_handler.wrap_foreign_methods(self)
 
@@ -207,6 +208,12 @@ class Synchronizer:
             except Exception as e:
                 self.info_handler.debug_error_notes(f"[update_positions Error]: {e}")
 
+            # основной код update_positions
+            finally:
+                if not self._first_update_done:
+                    self._first_update_done = True
+                    self.info_handler.debug_info_notes("[update_positions] First update done, flag set")
+
     async def refresh_positions_state(self):
         """Обновляет позиции для всех стратегий"""
         try:
@@ -237,9 +244,7 @@ class Synchronizer:
                 self.context.position_vars[symbol] = deepcopy(data)
             self.context.pos_loaded_cache = None
 
-        set_event_interval = 2.0
         cache_update_interval = 5.0
-        last_event_time = time.monotonic()
         last_cache_time = time.monotonic()
 
         cycle = 0
@@ -256,12 +261,6 @@ class Synchronizer:
                 print(f"[SYNC][ERROR] refresh_positions_state: {e}")
 
             now = time.monotonic()
-
-            # событие обновления позиций
-            if now - last_event_time >= set_event_interval:
-                # print(f"[SYNC] set position_updated_event (цикл {cycle})")
-                self.context.position_updated_event.set()
-                last_event_time = now
 
             # обновление кэша
             if self.use_cache and (now - last_cache_time >= cache_update_interval):

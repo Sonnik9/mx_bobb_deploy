@@ -17,7 +17,7 @@ from aiogram import Bot, Dispatcher
 
 from c_sync import Synchronizer
 from c_log import ErrorHandler, log_time
-from c_utils import Utils, FileManager, validate_direction, tp_levels_generator, parse_range_key
+from c_utils import Utils, FileManager, validate_direction, tp_levels_generator, normalize_tp_cap_dep
 import traceback
 import os
 
@@ -163,21 +163,18 @@ class Core:
         self,
         chat_id,
         symbol: str,
-        cap: float,                          
+        cap: float,
         last_timestamp: str,
         debug_label: str,
     ) -> None:
-        try:
-            # print(f"{symbol} cap: {cap}")
+        # Формируем ключ блокировки: символ + сторона
 
+        try:
             # ==== Финансовые настройки пользователя ====
             fin_settings = self.context.users_configs[chat_id]["config"]["fin_settings"]
-            # pprint(fin_settings)
 
             # Переводим строки диапазонов в кортежи
-            fin_settings["tp_cap_dep"] = {
-                parse_range_key(k): v for k, v in fin_settings.get("tp_cap_dep", {}).items()
-            }
+            fin_settings["tp_cap_dep"] = normalize_tp_cap_dep(fin_settings.get("tp_cap_dep", {}))
 
             # Генерируем новые tp_levels
             new_tp_levels = tp_levels_generator(
@@ -188,25 +185,22 @@ class Core:
             )
             fin_settings["tp_levels"] = new_tp_levels
 
-            # pprint(fin_settings)
-
             # ==== Установка позиции по умолчанию ====
             if not self.pos_setup.set_pos_defaults(symbol, self.direction, self.instruments_data):
                 return
 
-            # Ждем, пока обновятся позиции
-            await self.context.position_updated_event.wait()
-            self.context.position_updated_event.clear()
+            # Ждём, пока первый апдейт позиций не произойдёт
+            while not self.sync._first_update_done:
+                # self.info_handler.debug_info_notes(f"[handle_signal] Waiting for first positions update for {symbol}")
+                await asyncio.sleep(0.1)
 
             in_position = self.context.position_vars.get(symbol, {}).get(self.direction, {}).get("in_position", False)
             if in_position:
-                self.is_any_position = True 
+                self.is_any_position = True
                 return
 
             # ==== Отправка сигнала ====
             signal_body = {"symbol": symbol, "cur_time": last_timestamp}
-            # print(signal_body)
-
             self.notifier.preform_message(
                 chat_id=chat_id,
                 marker="signal",
@@ -225,14 +219,16 @@ class Core:
             symbol_data = self.context.position_vars.get(symbol)
             if symbol_data:  # проверка, чтобы не было KeyError
                 if debug_label not in self.tp_tasks or self.tp_tasks[debug_label].done():
-                    self.tp_tasks[debug_label] = asyncio.create_task(self.tp_control.tp_control_flow(
-                        symbol=symbol,
-                        symbol_data=symbol_data,
-                        sign=1 if self.direction == "LONG" else -1,
-                        debug_label=debug_label,
-                    ))
+                    self.tp_tasks[debug_label] = asyncio.create_task(
+                        self.tp_control.tp_control_flow(
+                            symbol=symbol,
+                            symbol_data=symbol_data,
+                            sign=1 if self.direction == "LONG" else -1,
+                            debug_label=debug_label,
+                        )
+                    )
             else:
-                print(f"[WARNING] TP control skipped: symbol {symbol} not in position_vars yet")    
+                print(f"[WARNING] TP control skipped: symbol {symbol} not in position_vars yet")
 
     async def _run_iteration(self) -> None:
         """Одна итерация торговли (от старта до стопа)."""
@@ -343,15 +339,23 @@ class Core:
                         for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
                             if num > 1:
                                 continue
-                            asyncio.create_task(
-                                self.handle_signal(
-                                    chat_id=chat_id,
-                                    symbol=symbol,
-                                    cap=cap,
-                                    last_timestamp=last_timestamp,
-                                    debug_label=debug_label
+                            lock_key = f"{symbol}_{self.direction}"
+
+                            if lock_key not in self.context.symbol_locks:
+                                self.context.symbol_locks[lock_key] = asyncio.Lock()
+
+                            if not self.context.symbol_locks[lock_key].locked():
+                                asyncio.create_task(
+                                    self.handle_signal(
+                                        chat_id=chat_id,
+                                        symbol=symbol,
+                                        cap=cap,
+                                        last_timestamp=last_timestamp,
+                                        debug_label=debug_label
+                                    )
                                 )
-                            )
+                            else:
+                                print(f"[DEBUG] Signal for {lock_key} skipped: already processing")
 
             except Exception as e:
                 err_msg = f"[ERROR] main loop: {e}\n" + traceback.format_exc()

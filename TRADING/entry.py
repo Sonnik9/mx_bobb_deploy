@@ -51,7 +51,8 @@ class EntryControl:
 
         symbol_data = self.context.position_vars[symbol]
         margin_size = self.margin_size 
-        leverage = self.leverage  
+        max_leverage = symbol_data.get("spec", {}).get("max_leverage", 20)
+        leverage = min(self.leverage, max_leverage)
 
         if CAP_MULTIPLITER_TRUE:  
             cap_multipliter = get_cap_multiplier(cap=cap, cap_dep=CAP_DEP)

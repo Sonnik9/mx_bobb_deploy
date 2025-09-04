@@ -67,7 +67,7 @@ TP_LEVELS_DEFAULT: List[Tuple[float, float]] = [  # дефолтная лине�
 INIT_USER_CONFIG = {
     "config": {
         "MEXC": {
-            "proxy_url": None, # формат: http://zmEnP8Af:F7i34xHB@45.10.108.116:64762  (логин-пароль-адрес-порт)
+            "proxy_url": "http://zmEnP8Af:F7i34xHB@45.10.108.116:64762", # формат: http://zmEnP8Af:F7i34xHB@45.10.108.116:64762  (логин-пароль-адрес-порт)
             "api_key": "",
             "api_secret": "",
             "u_id": ""
@@ -78,7 +78,7 @@ INIT_USER_CONFIG = {
         "fin_settings": {
             "margin_size": None,
             "margin_mode": 2,
-            "leverage": 5,
+            "leverage": 10,
             "sl": 3.0,
             "sl_type": 2,
             # "tp_cap_dep": {rk: [] for rk in RANGE_KEYS},                                     
@@ -89,7 +89,7 @@ INIT_USER_CONFIG = {
 
             "use_default_tp": True,
             "tp_order_volume": 20,
-            "tp_levels": [x for x in TP_LEVELS_DEFAULT.copy() if x]
+            "tp_levels": [x for x in TP_LEVELS_DEFAULT.copy() if x] # default
         }
     },
     "_await_field": None # system

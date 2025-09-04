@@ -366,7 +366,7 @@ class TelegramUserInterface:
                         except Exception:
                             await message.answer("Неверные числа. Используйте дробные значения.")
                             return
-                        
+
                     if not validate_tp_cap_dep_levels(levels):
                         await message.answer(
                             f"Ошибка: вводимые данные невалидные! "
@@ -374,7 +374,11 @@ class TelegramUserInterface:
                         )
                         return False
 
+                    # === сохраняем в конфиг ===
                     fs["tp_cap_dep"][range_key] = levels
+
+                    # 🔑 тут сразу же обновляем дефолт динамически
+                    cfg["config"]["fin_settings"]["tp_cap_dep"][range_key] = levels
 
                     # Проверка равенства длин
                     lengths = [len(v) for v in fs["tp_cap_dep"].values() if v]
