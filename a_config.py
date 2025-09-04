@@ -24,7 +24,7 @@ CAP_DEP: dict = {
 
 # -- UTILS ---
 TIME_ZONE: str = "UTC"
-SLIPPAGE_PCT: float = 0.02 # % -------------------- поправка для расчетов PnL
+SLIPPAGE_PCT: float = 0.05 # % -------------------- поправка для расчетов PnL
 SIGNAL_TIMEOUT: float = 10 # sec ------------------ время в течение которого сиглал актуален
 PRECISION: int = 28 # ------------------------------точность расчетов decimal (нужно для особо малых чисел)
 
@@ -78,7 +78,7 @@ INIT_USER_CONFIG = {
         "fin_settings": {
             "margin_size": None,
             "margin_mode": 2,
-            "leverage": 10,
+            "leverage": 16,
             "sl": 3.0,
             "sl_type": 2,
             # "tp_cap_dep": {rk: [] for rk in RANGE_KEYS},                                     
@@ -87,7 +87,7 @@ INIT_USER_CONFIG = {
                 "1000+": [3, 7, 10, 15, 20],
             },
 
-            "use_default_tp": True,
+            # "use_default_tp": True,
             "tp_order_volume": 20,
             "tp_levels": [x for x in TP_LEVELS_DEFAULT.copy() if x] # default
         }

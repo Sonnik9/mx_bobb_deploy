@@ -215,6 +215,26 @@ def normalize_tp_cap_dep(tp_cap_dep: dict) -> dict:
             normalized[parse_range_key(k)] = v
     return normalized
 
+def safe_float(v, default=0.0, abs_val=False):
+    try:
+        val = float(v)
+        return abs(val) if abs_val else val
+    except (TypeError, ValueError):
+        return default
+
+def safe_int(v, default=0, abs_val=False):
+    try:
+        val = int(v)
+        return abs(val) if abs_val else val
+    except (TypeError, ValueError):
+        return default
+
+def safe_round(v, ndigits=2, default=0.0):
+    try:
+        return round(float(v), ndigits)
+    except (TypeError, ValueError):
+        return default
+
 
 class Utils:
     def __init__(

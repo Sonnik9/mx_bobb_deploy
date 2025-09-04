@@ -321,7 +321,7 @@ class TPControl:
             if first_sl: pos_data["sl_initiated"] = True   
         
         return False
-                
+                    
     async def tp_orchestrator(
         self,
         symbol: str,
@@ -329,10 +329,18 @@ class TPControl:
         sign: int, 
         debug_label: str
     ):
-        if not symbol_data.get(self.direction, {}).get("in_position"):
+        pos_data = symbol_data.get(self.direction, {})
+        if not pos_data.get("in_position"):
             return False
         
-        if not symbol_data.get(self.direction, {}).get("tp_initiated", False):
+        if pos_data["preexisting"]:
+            pos_data["tp_initiated"] = True
+            pos_data["sl_initiated"] = True
+
+        if pos_data["tp_initiated"] and pos_data["sl_initiated"] and not pos_data.get("in_position"):
+            return True
+
+        if not pos_data.get("tp_initiated", False):
             await self.tp_factory(
                 symbol=symbol,
                 symbol_data=symbol_data,
@@ -340,18 +348,17 @@ class TPControl:
                 debug_label=debug_label,
                 debug=True
             )            
-            symbol_data[self.direction]["tp_initiated"] = True
+            pos_data["tp_initiated"] = True
 
         if self.fin_settings.get("sl") is not None:
-            if await self.sl_control(
+            return await self.sl_control(
                 symbol=symbol,                
                 symbol_data=symbol_data,
                 sign=sign,
                 debug_label=debug_label,
                 debug=True
-            ):
-                return True 
-            
+            )
+
         return False
 
     async def tp_control_flow(self, symbol: str, symbol_data: Dict,
@@ -365,5 +372,5 @@ class TPControl:
                 sign=sign,
                 debug_label=debug_label
             ):  
-                # print(f"[DEBUG]:задача tp_control_flow завершена. {log_time()}")
+                print(f"[DEBUG]:задача tp_control_flow завершена. {log_time()}")
                 return

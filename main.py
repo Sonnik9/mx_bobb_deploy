@@ -21,6 +21,8 @@ from c_utils import Utils, FileManager, validate_direction, tp_levels_generator,
 import traceback
 import os
 
+SIGNAL_REPEAT_TIMEOUT = 5
+
 def force_exit(*args):
     print("💥 Принудительное завершение процесса")
     os._exit(1)  # немедленно убивает процесс
@@ -181,7 +183,7 @@ class Core:
                 cap=cap,
                 tp_order_volume=fin_settings.get("tp_order_volume"),
                 tp_cap_dep=fin_settings["tp_cap_dep"],
-                use_default=fin_settings.get("use_default_tp")
+                use_default=False
             )
             fin_settings["tp_levels"] = new_tp_levels
 
@@ -194,9 +196,14 @@ class Core:
                 # self.info_handler.debug_info_notes(f"[handle_signal] Waiting for first positions update for {symbol}")
                 await asyncio.sleep(0.1)
 
-            in_position = self.context.position_vars.get(symbol, {}).get(self.direction, {}).get("in_position", False)
-            if in_position:
-                self.is_any_position = True
+            pos_data = self.context.position_vars.get(symbol, {}).get(self.direction, {})
+
+            # Защита 1: уже в позиции (по данным биржи)
+            if pos_data.get("in_position"):
+                pos_data["preexisting"] = True
+                self.info_handler.debug_info_notes(
+                    f"[handle_signal] Skip: already in_position {symbol} {self.direction}"
+                )
                 return
 
             # ==== Отправка сигнала ====
@@ -232,7 +239,7 @@ class Core:
 
     async def _run_iteration(self) -> None:
         """Одна итерация торговли (от старта до стопа)."""
-        # print("[CORE] Iteration started")
+        print("[CORE] Iteration started")
 
         # --- Проверяем базовый контекст ---
         if not self._start_usual_context():
@@ -296,32 +303,21 @@ class Core:
 
         await self.context.orders_updated_event.wait()
         self.context.orders_updated_event.clear()
-        # print("[DEBUG] Order update event cleared, entering main signal loop")
+        print("[DEBUG] Order update event cleared, entering main signal loop")
 
         # --- Основной цикл итерации ---
         while not self.context.stop_bot_iteration and not self.context.stop_bot:
             try:
                 signal_tasks_val = self.context.message_cache[-SIGNAL_PROCESSING_LIMIT:] if self.context.message_cache else None
                 if not signal_tasks_val:
-                    # print("[DEBUG] No signal tasks available")
                     await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
                     continue
 
-                for signal_item in signal_tasks_val:
-                    if not signal_item:
-                        continue
-
-                    message, last_timestamp = signal_item
-                    if not (message and last_timestamp):
-                        # print("[DEBUG] Invalid signal item, skipping")
-                        continue
-
-                    msg_key = f"{last_timestamp}_{hash(message)}"
-                    if msg_key in self.context.tg_timing_cache:
-                        continue
-                    self.context.tg_timing_cache.add(msg_key)
-
-                    parsed_msg, all_present = self.tg_watcher.parse_tg_message(message)
+                # --- Фильтруем сигналы по тексту и времени ---
+                filtered_signals: List[Tuple[str, int, str, dict]] = []  # msg, ts, chat_id, parsed_msg
+                current_time = time.time()
+                for msg, ts in signal_tasks_val:
+                    parsed_msg, all_present = self.tg_watcher.parse_tg_message(msg)
                     if not all_present:
                         print(f"[DEBUG] Parse error: {parsed_msg}")
                         continue
@@ -332,30 +328,31 @@ class Core:
                         continue
 
                     debug_label = f"{symbol}_{self.direction}"
-                    diff_sec = time.time() - (last_timestamp / 1000)
-                    # print(f"[DEBUG] {debug_label} diff sec: {diff_sec:.2f}")
+                    diff_sec = current_time - (ts / 1000)
+                    if diff_sec >= SIGNAL_TIMEOUT:
+                        continue
 
-                    if diff_sec < SIGNAL_TIMEOUT:
-                        for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-                            if num > 1:
-                                continue
-                            lock_key = f"{symbol}_{self.direction}"
+                    for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+                        if num > 1:
+                            continue
 
-                            if lock_key not in self.context.symbol_locks:
-                                self.context.symbol_locks[lock_key] = asyncio.Lock()
+                        # --- Генерируем ключ для повторной отправки ---
+                        signal_key = f"{symbol}_{self.direction}_{chat_id}"
+                        last_sent = self.context.tg_signal_hash_cache.get(signal_key, 0)
+                        if current_time - last_sent < SIGNAL_REPEAT_TIMEOUT:
+                            continue
 
-                            if not self.context.symbol_locks[lock_key].locked():
-                                asyncio.create_task(
-                                    self.handle_signal(
-                                        chat_id=chat_id,
-                                        symbol=symbol,
-                                        cap=cap,
-                                        last_timestamp=last_timestamp,
-                                        debug_label=debug_label
-                                    )
-                                )
-                            else:
-                                print(f"[DEBUG] Signal for {lock_key} skipped: already processing")
+                        self.context.tg_signal_hash_cache[signal_key] = current_time
+                        filtered_signals.append((msg, ts, chat_id, parsed_msg))
+
+                # --- Обработка сигналов ---
+                for message, last_timestamp, chat_id, parsed_msg in filtered_signals:
+                    symbol = parsed_msg.get("symbol")
+                    cap = parsed_msg.get("cap")
+                    debug_label = f"{symbol}_{self.direction}"
+
+                    # --- Создаём асинхронную задачу с авто-очисткой pending_open ---
+                    asyncio.create_task(self.handle_signal(chat_id, symbol, cap, last_timestamp, debug_label))
 
             except Exception as e:
                 err_msg = f"[ERROR] main loop: {e}\n" + traceback.format_exc()
@@ -372,7 +369,6 @@ class Core:
                     self.info_handler.debug_error_notes(err_msg, is_print=True)
 
                 await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
-
 
     async def run_forever(self, debug: bool = False):
         """Основной перезапускаемый цикл Core."""

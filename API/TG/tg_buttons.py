@@ -56,8 +56,6 @@ def validate_user_config(user_cfg: dict) -> bool:
 
     if fin.get("sl_type") is None:
         return False
-    if not isinstance(fin.get("use_default_tp"), bool):
-        return False
     if not fin.get("tp_order_volume") or fin.get("tp_order_volume") > 100:
         return False
 
@@ -153,7 +151,6 @@ class TelegramUserInterface:
         self.dp.callback_query.register(self.sl_input, F.data == "SET_SL")
         self.dp.callback_query.register(self.sl_type_input, F.data == "SET_SL_TYPE")
         self.dp.callback_query.register(self.tp_levels_input, F.data == "SET_TP_LEVELS")
-        self.dp.callback_query.register(self.use_default_tp_input, F.data == "SET_USE_DEFAULT_TP")
         self.dp.callback_query.register(self.tp_order_volume_input, F.data == "SET_TP_ORDER_VOLUME")
         for rk in RANGE_KEYS:
             self.dp.callback_query.register(self.tp_range_select, F.data == f"SET_TP_RANGE_{rk}")
@@ -199,7 +196,6 @@ class TelegramUserInterface:
             [InlineKeyboardButton(text="Stop Loss", callback_data="SET_SL")],
             [InlineKeyboardButton(text="SL Type", callback_data="SET_SL_TYPE")],
             [InlineKeyboardButton(text="TP Levels", callback_data="SET_TP_LEVELS")],
-            [InlineKeyboardButton(text="Use Default TP", callback_data="SET_USE_DEFAULT_TP")],
             [InlineKeyboardButton(text="TP Order Volume", callback_data="SET_TP_ORDER_VOLUME")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="SETTINGS")]
         ]
@@ -404,14 +400,6 @@ class TelegramUserInterface:
                         await message.answer("❗ Введите корректное число")
                         return
 
-                # Use Default TP
-                elif field == "use_default_tp":
-                    if raw not in ("1", "2"):
-                        await message.answer("Введите 1 для True, 2 для False.")
-                        return
-                    val = raw == "1"
-                    fs["use_default_tp"] = val
-
                 # Stop Loss
                 elif field == "sl":
                     # await message.answer("Введите основной Stop Loss в процентах.\nВведите 0 для отключения SL (None).")
@@ -561,14 +549,6 @@ class TelegramUserInterface:
             ] + [[InlineKeyboardButton(text="⬅️ Назад", callback_data="SET_FIN")]]
         )
         await callback.message.edit_text("Выберите диапазон TP Levels:", reply_markup=keyboard)
-
-    async def use_default_tp_input(self, callback: types.CallbackQuery):
-        await callback.answer()
-        user_id = callback.from_user.id
-        self.ensure_user_config(user_id)
-
-        self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "use_default_tp"}
-        await callback.message.answer("Использовать дефолтный TP? 1 – Да, 2 – Нет:")
 
     async def tp_order_volume_input(self, callback: types.CallbackQuery):
         await callback.answer()

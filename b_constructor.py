@@ -21,6 +21,8 @@ class PositionVarsSetup:
             "hold_price": None,   
             "contracts": None,
             "vol_assets": None,
+            "preexisting": False,
+            "pending_open": False,
             "in_position": False, 
             "tp_initiated": False,
             "tp_prices": [],

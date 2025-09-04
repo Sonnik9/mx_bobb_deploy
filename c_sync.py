@@ -5,7 +5,7 @@ from typing import *
 from b_context import BotContext
 from c_log import ErrorHandler
 from API.MX.mx import MexcClient
-from c_utils import FileManager, to_human_digit
+from c_utils import FileManager, to_human_digit, safe_float, safe_int, safe_round
 from TRADING.exit import ExitControl
 from copy import deepcopy   
 
@@ -78,6 +78,7 @@ class Synchronizer:
                     debug_label=label
                 )
 
+        finally:
             # сброс локальных данных
             self.set_pos_defaults(
                 symbol=symbol,
@@ -85,7 +86,6 @@ class Synchronizer:
                 instruments_data=None,
                 reset_flag=True
             )
-        finally:
             pos_data["_reset_in_progress"] = False
 
     @staticmethod
@@ -101,17 +101,17 @@ class Synchronizer:
                 # "c_time": 0.0
             }
 
-        pos_type = position.get("positionType")
+        pos_type = safe_int(position.get("positionType"))
         pos_side = "LONG" if pos_type == 1 else "SHORT" if pos_type == 2 else ""
-        symbol = position.get("symbol", "").upper()
+        symbol = str(position.get("symbol", "")).upper()
 
         return {
             "symbol": symbol,
             "pos_side": pos_side,
-            "contracts": abs(float(position.get("holdVol", 0.0))),
-            "hold_price": float(position.get("holdAvgPrice", 0.0)),
-            "leverage": int(position.get("leverage", 1)),
-            # "c_time": float(position.get("cTime", 0.0))
+            "contracts": safe_float(position.get("holdVol"), 0.0, abs_val=True),
+            "hold_price": safe_float(position.get("holdAvgPrice"), 0.0),
+            "leverage": safe_int(position.get("leverage"), 1, abs_val=True),
+            # "c_time": safe_float(position.get("cTime"), 0.0)
         }
 
     def update_active_position(
@@ -122,33 +122,41 @@ class Synchronizer:
             info: dict
     ):
         """Обновляет локальные данные для активной позиции"""
-        hold_price = info.get("hold_price")
-        contracts = info.get("contracts")
-        leverage = info.get("leverage")
+        hold_price = safe_float(info.get("hold_price"))
+        contracts = safe_float(info.get("contracts"))
+        leverage = safe_int(info.get("leverage"), 1)
 
-        pos_data = symbol_data[pos_side]        
+        pos_data = symbol_data.get(pos_side, {})
 
         if not pos_data.get("in_position"):
             cur_time = int(time.time() * 1000)
             pos_data["c_time"] = cur_time
+
             spec = symbol_data.get("spec", {})
-            price_precision = spec.get("price_precision")
+            price_precision = safe_int(spec.get("price_precision"), 2)
+            contract_size = safe_float(spec.get("contract_size"), 1.0)
+
             pos_data["entry_price"] = hold_price
-            pos_data["vol_assets"] = contracts * spec.get("contract_size", 1)
+            pos_data["vol_assets"] = contracts * contract_size
+
             sign = -1 if pos_side == "SHORT" else 1
-            tp_price_levels = [hold_price * (1 + sign * x[0] / 100) for x in self.tp_levels]
+            tp_price_levels = [
+                hold_price * (1 + sign * safe_float(x[0]) / 100)
+                for x in getattr(self, "tp_levels", [])
+                if isinstance(x, (list, tuple)) and len(x) > 0
+            ]
 
             sl_price = None
             if self.fin_settings.get("sl") is not None:
-                sl_price = hold_price * (1 - sign * abs(self.fin_settings.get("sl")) / 100)
-                sl_price = to_human_digit(round(sl_price, price_precision))
+                sl_raw = hold_price * (1 - sign * abs(safe_float(self.fin_settings.get("sl"))) / 100)
+                sl_price = to_human_digit(safe_round(sl_raw, price_precision))
 
             body = {
                 "symbol": symbol,
                 "leverage": leverage,
                 "cur_time": cur_time,
-                "entry_price": to_human_digit(round(hold_price, price_precision)),
-                "tp_price_levels": [to_human_digit(round(x, price_precision)) for x in tp_price_levels],
+                "entry_price": to_human_digit(safe_round(hold_price, price_precision)),
+                "tp_price_levels": [to_human_digit(safe_round(x, price_precision)) for x in tp_price_levels],
                 "cur_sl": sl_price
             }
             self.preform_message(
@@ -205,14 +213,12 @@ class Synchronizer:
                                 pos_side=pos_side
                             )
 
-            except Exception as e:
-                self.info_handler.debug_error_notes(f"[update_positions Error]: {e}")
-
-            # основной код update_positions
-            finally:
                 if not self._first_update_done:
                     self._first_update_done = True
                     self.info_handler.debug_info_notes("[update_positions] First update done, flag set")
+
+            except Exception as e:
+                self.info_handler.debug_error_notes(f"[update_positions Error]: {e}")
 
     async def refresh_positions_state(self):
         """Обновляет позиции для всех стратегий"""
