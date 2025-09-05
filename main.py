@@ -10,6 +10,7 @@ from API.TG.tg_notifier import TelegramNotifier
 from API.TG.tg_buttons import TelegramUserInterface
 from API.MX.mx import MexcClient
 from API.MX.streams import MxFuturesOrderWS
+from API.MX.mx_bypass.api import MexcFuturesAPI
 from TRADING.entry import EntryControl
 from TRADING.exit import ExitControl
 from TRADING.tp import TPControl
@@ -17,7 +18,7 @@ from aiogram import Bot, Dispatcher
 
 from c_sync import Synchronizer
 from c_log import ErrorHandler, log_time
-from c_utils import Utils, FileManager, validate_direction, tp_levels_generator, normalize_tp_cap_dep
+from c_utils import Utils, FileManager, validate_direction, tp_levels_generator
 import traceback
 import os
 
@@ -105,8 +106,10 @@ class Core:
             context=self.context,
             info_handler=self.info_handler,
             preform_message=self.notifier.preform_message,
+            get_realized_pnl=self.mx_client.get_realized_pnl,
             chat_id=chat_id
         )
+        # print(self.utils)
 
         self.pos_setup = PositionVarsSetup(
             context=self.context,
@@ -175,17 +178,13 @@ class Core:
             # ==== Финансовые настройки пользователя ====
             fin_settings = self.context.users_configs[chat_id]["config"]["fin_settings"]
 
-            # Переводим строки диапазонов в кортежи
-            fin_settings["tp_cap_dep"] = normalize_tp_cap_dep(fin_settings.get("tp_cap_dep", {}))
-
             # Генерируем новые tp_levels
             new_tp_levels = tp_levels_generator(
                 cap=cap,
                 tp_order_volume=fin_settings.get("tp_order_volume"),
-                tp_cap_dep=fin_settings["tp_cap_dep"],
-                use_default=False
+                tp_cap_dep=fin_settings["tp_levels"]
             )
-            fin_settings["tp_levels"] = new_tp_levels
+            fin_settings["tp_levels_gen"] = new_tp_levels
 
             # ==== Установка позиции по умолчанию ====
             if not self.pos_setup.set_pos_defaults(symbol, self.direction, self.instruments_data):
@@ -246,7 +245,7 @@ class Core:
             self.context.stop_bot_iteration = True
             print("[DEBUG] Usual context start failed, iteration stopped")
             return
-        # print("[DEBUG] Usual context initialized successfully")
+        print("[DEBUG] Usual context initialized successfully")
 
         # --- Перебор пользователей ---
         for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
@@ -310,6 +309,7 @@ class Core:
             try:
                 signal_tasks_val = self.context.message_cache[-SIGNAL_PROCESSING_LIMIT:] if self.context.message_cache else None
                 if not signal_tasks_val:
+                    # print("signal_tasks_val")
                     await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
                     continue
 
@@ -370,7 +370,7 @@ class Core:
 
                 await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
 
-    async def run_forever(self, debug: bool = False):
+    async def run_forever(self, debug: bool = True):
         """Основной перезапускаемый цикл Core."""
         if debug: print("[CORE] run_forever started")
 

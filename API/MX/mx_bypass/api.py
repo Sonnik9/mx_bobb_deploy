@@ -163,6 +163,7 @@ class MexcFuturesAPI:
 
             async with s.request(**kwargs) as response:
                 response_data = await response.json()
+                # print(response_data)
                 if response_type:
                     return ApiResponse.from_dict(response_data, response_type)
                 return ApiResponse(
@@ -576,4 +577,38 @@ class MexcFuturesAPI:
             triggerPrice=price,
             triggerType=trigger_type,
         )
-        return await self.create_trigger_order(trigger_request, session)
+        return await self.create_trigger_order(trigger_request, session)    
+
+# /// 
+    async def get_historical_orders_report(
+        self,
+        symbol: Optional[str] = None,
+        page_num: int = 1,
+        page_size: int = 20,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> ApiResponse[List[Dict[str, Any]]]:
+        """
+        Получить фьючерсный отчет (History Positions) с MEXC.
+        Содержит реализованный PnL, комиссии, фондинг и т.п.
+
+        Args:
+            start_time (int): начальное время в мс (timestamp), фильтрация выполняется на клиенте
+            end_time (int): конечное время в мс (timestamp), фильтрация выполняется на клиенте
+            symbol (str): символ контракта
+            page_num (int): номер страницы
+            page_size (int): размер страницы
+        """
+        params = {
+            "symbol": symbol,
+            "page_num": page_num,
+            "page_size": page_size,
+        }
+
+        # print(params)
+
+        return await self._make_request(
+            session,
+            "GET",
+            "/private/position/list/history_positions",
+            params,
+        )

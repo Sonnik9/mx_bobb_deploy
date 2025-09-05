@@ -2,6 +2,7 @@ import aiohttp
 import functools
 from aiohttp import ClientConnectionError, ClientConnectorError, ClientPayloadError
 import asyncio
+import time
 from typing import *
 from b_context import BotContext
 from b_network import NetworkManager
@@ -103,6 +104,81 @@ class MexcClient:
         if response and getattr(response, "success", False) and response.data:
             return response.data
         return []
+
+    # /////
+    async def get_realized_pnl(
+        self,
+        symbol: str,
+        start_time: Optional[int],
+        end_time: Optional[int],
+        direction: Optional[int] = None  # 1=LONG, 2=SHORT
+    ) -> dict:
+        """
+        Считает реализованный PnL за период по символу.
+        Возвращает словарь:
+            {"pnl_usdt": float, "pnl_pct": float}
+        """
+        try:
+            rows = await self.get_futures_statement(symbol=symbol)
+            if not rows:
+                return {"pnl_usdt": 0.0, "pnl_pct": 0.0}
+        except Exception as e:
+            self.info_handler.debug_error_notes(
+                f"[get_realized_pnl] error fetching data: {e}", is_print=True
+            )
+            return {"pnl_usdt": 0.0, "pnl_pct": 0.0}
+
+        pnl_usdt = 0.0
+        pnl_pct = 0.0
+
+        try:
+
+            for row in rows:
+                try:
+                    # фильтрация по времени
+                    ts = int(row.get("updateTime", 0))  # используем updateTime
+                    # print(ts - start_time)
+                    # print(ts > start_time)
+                    if start_time and ts < start_time:
+                        continue
+
+                    # фильтрация по направлению
+                    if direction and row.get("positionType") != direction:
+                        continue
+
+                    # суммируем реализованный PnL
+                    pnl_usdt += float(row.get("realised", 0.0))
+                    # print(f"pnl_usdt: {pnl_usdt}")
+
+                    # суммируем проценты
+                    if row.get("profitRatio") is not None:
+                        pnl_pct += float(row["profitRatio"]) * 100
+
+                except Exception:
+                    continue
+
+        finally:
+            return {
+                "pnl_usdt": round(pnl_usdt, 6),
+                "pnl_pct": round(pnl_pct, 4),  # уже %
+            }
+
+    
+    @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")
+    async def get_futures_statement(
+        self,
+        symbol: Optional[str] = None,
+        # page_num: int = 1,
+        # page_size: int = 20
+    ):
+        response = await self.api.get_historical_orders_report(
+            symbol=symbol,
+            session=self.session
+        )
+        # print(response)
+        if response and getattr(response, "success", False) and response.data:
+            return response.data
+        return []      
 
     ########################## BYPASS WAY ###############################      
     @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")        

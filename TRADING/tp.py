@@ -31,9 +31,6 @@ class TPControl:
         self.direction = direction   
         self.chat_id = chat_id
         # //        
-        self.fin_settings = self.context.users_configs[chat_id].get("config").get("fin_settings")
-        self.tp_levels = self.fin_settings.get("tp_levels")
-        self.sleep_list = sleep_generator(tp_len=len(self.tp_levels))
 
     async def tp_factory(
             self,
@@ -65,13 +62,13 @@ class TPControl:
 
         
         remaining_contracts = total_contracts
-        for idx, (indent, volume) in enumerate(self.tp_levels, start=1):
+        for idx, (indent, volume) in enumerate(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"], start=1):
             try:
                 success = False
                 reason = "N/A"
                 cur_time = int(time.time() * 1000)
                 # // set contracts:   
-                if idx < len(self.tp_levels):
+                if idx < len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]):
                     cur_contract = remaining_contracts * volume / 100
                 else:
                     cur_contract = remaining_contracts
@@ -138,7 +135,7 @@ class TPControl:
                         is_print=True
                     )
                 # === Pause ===
-                sleep_pause = self.sleep_list[idx-1]
+                sleep_pause = sleep_generator(tp_len=len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]))[idx-1]
                 # print(f"#{idx}: sleep {sleep_pause:.2f} сек")
                 await asyncio.sleep(sleep_pause)
 
@@ -270,7 +267,7 @@ class TPControl:
             if is_move_sl: pos_data["progress"] = current_progress
             # print(f"current_progress: {current_progress}")
 
-            if pos_data["progress"] >= len(self.tp_levels):
+            if pos_data["progress"] >= len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]):
                 pos_data["force_reset_flag"] = True
                 print(f"[{debug_label}] все тейк-профит лимитки исполнены. {log_time()}")
                 return True
@@ -290,8 +287,8 @@ class TPControl:
         sl_price = calc_next_sl(
             entry_price = pos_data.get("entry_price"),
             progress=pos_data.get("progress"),
-            base_sl=self.fin_settings.get("sl"),
-            sl_type=self.fin_settings.get("sl_type"),
+            base_sl=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl"),
+            sl_type=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl_type"),
             tp_prices=pos_data.get("tp_prices"),
             sign=sign,
             price_precision=price_precision
@@ -350,7 +347,7 @@ class TPControl:
             )            
             pos_data["tp_initiated"] = True
 
-        if self.fin_settings.get("sl") is not None:
+        if self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl") is not None:
             return await self.sl_control(
                 symbol=symbol,                
                 symbol_data=symbol_data,

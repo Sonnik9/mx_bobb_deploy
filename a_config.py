@@ -10,7 +10,7 @@ TEG_ANCHOR: str = "UPBIT LISTING"
 
 TG_BOT_TOKEN: str = "7976740718:AAE1xBujUM26JfvefRr1hkcA12yfUC9e9qk" # bot token
 TG_GROUP_ID: str = "-1002653345160" # id группы откуда парсить сигнал
-# TG_BOT_TOKEN: str = "8304645115:AAE5HKrTclLDoRmE5W60vLRurbEH_fm-qyU" # -- токен бота (test)
+# TG_BOT_TOKEN: str = "8112036801:AAHOVza_DoL7gFwJiITpXIdZRi8yOMtmihI" # -- токен бота (test)
 # TG_GROUP_ID: str = "-1003053085303" # -- id группы откуда парсить сигнал (test)
 
 # //
@@ -76,21 +76,18 @@ INIT_USER_CONFIG = {
             # "u_id": "WEB242b9e58e0e4f2d55f184870de2a16a520bf1d3969a7240c821b19d308abf91b"
         },
         "fin_settings": {
-            "margin_size": None,
+            "margin_size": 10,
             "margin_mode": 2,
             "leverage": 16,
             "sl": 3.0,
-            "sl_type": 2,
-            # "tp_cap_dep": {rk: [] for rk in RANGE_KEYS},                                     
-            "tp_cap_dep": {"0-500": [10, 25, 50, 75, 100],
+            "sl_type": 2,                                   
+            "tp_levels": {"0-500": [10, 25, 50, 75, 100],
                 "500-1000": [5, 10, 15, 20, 30],
                 "1000+": [3, 7, 10, 15, 20],
             },
-
-            # "use_default_tp": True,
-            "tp_order_volume": 20,
-            "tp_levels": [x for x in TP_LEVELS_DEFAULT.copy() if x] # default
-        }
+            "tp_levels_gen": [x for x in TP_LEVELS_DEFAULT.copy() if x],
+            "tp_order_volume": 20
+    }
     },
     "_await_field": None # system
 }

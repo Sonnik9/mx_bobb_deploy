@@ -5,7 +5,7 @@ from typing import *
 from a_config import *
 from b_context import BotContext
 from c_log import ErrorHandler, log_time
-from c_utils import validate_tp_levels, validate_init_sl, validate_tp_cap_dep_levels
+from c_utils import validate_init_sl, validate_tp_cap_dep_levels
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -59,25 +59,19 @@ def validate_user_config(user_cfg: dict) -> bool:
     if not fin.get("tp_order_volume") or fin.get("tp_order_volume") > 100:
         return False
 
-    tp_cap_dep = fin.get("tp_cap_dep", {})
+    tp_cap_dep = fin.get("tp_levels", {})
     # Проверяем, что все диапазоны присутствуют и их длины одинаковы
     if any(rk not in tp_cap_dep for rk in RANGE_KEYS):
         return False
-    lengths = [len(tp_cap_dep[rk]) for rk in RANGE_KEYS]
-    if lengths and len(set(lengths)) > 1:
-        return False
-    if lengths and any(l == 0 for l in lengths):
-        return False
+    # lengths = [len(tp_cap_dep[rk]) for rk in RANGE_KEYS]
+    # if lengths and len(set(lengths)) > 1:
+    #     return False
+    # if lengths and any(l == 0 for l in lengths):
+    #     return False
 
     # Перезаписываем второй элемент каждого кортежа tp_levels
-    tp_levels = fin.get("tp_levels")
     tp_volume = fin.get("tp_order_volume")
     if not tp_volume or tp_volume > 100:
-        return False
-    fin["tp_levels"] = [(lvl[0], tp_volume) for lvl in tp_levels]
-
-    # ===== Доп. валидация =====
-    if not validate_tp_levels(fin["tp_levels"]):
         return False
 
     return True
@@ -247,9 +241,9 @@ class TelegramUserInterface:
         pretty_cfg = format_config(
             cfg=filtered_cfg,
             indent=0,
-            target_key="tp_cap_dep",
-            alt_key="tp_levels",
-            ex_key="tp_levels",
+            target_key=None,
+            alt_key=None,
+            ex_key="tp_levels_gen"
         )
 
         await message.answer(
@@ -344,8 +338,8 @@ class TelegramUserInterface:
         try:
             if section == "fin_settings":
                 # TP Ranges
-                if field.startswith("tp_cap_dep_"):  # ключ для диапазона: tp_cap_dep_0-500
-                    range_key = field.replace("tp_cap_dep_", "")
+                if field.startswith("tp_levels_"):  # ключ для диапазона: tp_levels_0-500
+                    range_key = field.replace("tp_levels_", "")
                     pairs = raw.split()
                     if not 1 <= len(pairs) <= 5:
                         await message.answer("Максимум 5 уровней!")
@@ -371,19 +365,19 @@ class TelegramUserInterface:
                         return False
 
                     # === сохраняем в конфиг ===
-                    fs["tp_cap_dep"][range_key] = levels
+                    fs["tp_levels"][range_key] = levels
 
                     # 🔑 тут сразу же обновляем дефолт динамически
-                    cfg["config"]["fin_settings"]["tp_cap_dep"][range_key] = levels
+                    cfg["config"]["fin_settings"]["tp_levels"][range_key] = levels
 
-                    # Проверка равенства длин
-                    lengths = [len(v) for v in fs["tp_cap_dep"].values() if v]
-                    if lengths and len(set(lengths)) > 1:
-                        await message.answer(
-                            f"Ошибка: количество уровней должно быть одинаковым во всех диапазонах! "
-                            f"Сейчас: {len(levels)}"
-                        )
-                        return
+                    # # Проверка равенства длин
+                    # lengths = [len(v) for v in fs["tp_levels"].values() if v]
+                    # if lengths and len(set(lengths)) > 1:
+                    #     await message.answer(
+                    #         f"Ошибка: количество уровней должно быть одинаковым во всех диапазонах! "
+                    #         f"Сейчас: {len(levels)}"
+                    #     )
+                    #     return
 
                 # Margin / Leverage / TP Order Volume
                 elif field in {"margin_size", "margin_mode", "leverage", "tp_order_volume"}:
@@ -455,7 +449,7 @@ class TelegramUserInterface:
         cfg = self.context.users_configs[user_id]
 
         # Просто указываем диапазон напрямую
-        cfg["_await_field"] = {"section": "fin_settings", "field": f"tp_cap_dep_{rk}"}
+        cfg["_await_field"] = {"section": "fin_settings", "field": f"tp_levels_{rk}"}
         await callback.message.answer(
             f"Введите уровни для диапазона {rk} в формате 1:3 2:5 3:7 … "
             "(максимум 5 уровней, пробел между парами, двоеточие внутри)."

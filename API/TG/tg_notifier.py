@@ -113,7 +113,7 @@ class MessageFormatter:
                 pnl_pct_str = f"{pnl_pct:.2f}%" if pnl_pct is not None else "N/A"
                 if pnl_usdt is not None:
                     sign = "+" if pnl_usdt > 0 else "-" if pnl_usdt < 0 else ""
-                    pnl_usdt_str = f"{sign} {abs(pnl_usdt):.2f}"
+                    pnl_usdt_str = f"{sign} {abs(pnl_usdt):.4f}"
                 else:
                     pnl_usdt_str = "N/A"
 

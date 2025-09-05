@@ -132,6 +132,7 @@ class TgBotWatcherAiogram(TgParser):
                 # # # Проверяем ID канала
                 # if message.chat.id != self.channel_id:
                 #     return
+                # print(message)
 
                 # Проверяем, есть ли текст
                 if not message.text:
@@ -143,6 +144,7 @@ class TgBotWatcherAiogram(TgParser):
                     return
 
                 ts_ms = int(message.date.timestamp() * 1000)
+                # print(ts_ms)
 
                 # Уникальность
                 if ts_ms in self._seen_messages:

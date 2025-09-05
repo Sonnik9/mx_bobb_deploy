@@ -178,22 +178,7 @@ def sleep_generator(tp_len):
         # print(f"#{idx}: sleep {pause:.2f} сек")
 
     return sorted(sleep_list)
-
-def tp_levels_generator(
-        cap: float,
-        tp_order_volume: float,
-        tp_cap_dep: Dict[tuple[int, float], list[int]],
-        use_default: bool = False
-    ) -> list[tuple[float, float]]:
-    if use_default:
-        return TP_LEVELS_DEFAULT
-
-    for (min_cap, max_cap), percentages in tp_cap_dep.items():
-        if min_cap <= cap <= max_cap:
-            return [(p, tp_order_volume) for p in percentages]
-
-    return TP_LEVELS_DEFAULT
-
+        
 def parse_range_key(rk: str) -> tuple[int, float]:
     """Преобразует строку диапазона в кортеж чисел (min, max)"""
     if '+' in rk:  # "1000+"
@@ -205,15 +190,22 @@ def parse_range_key(rk: str) -> tuple[int, float]:
         max_val = int(parts[1].strip()) * 1000
     return (min_val, max_val)
 
-def normalize_tp_cap_dep(tp_cap_dep: dict) -> dict:
-    """Приводит ключи tp_cap_dep к формату (tuple)."""
-    normalized = {}
-    for k, v in tp_cap_dep.items():
-        if isinstance(k, tuple):
-            normalized[k] = v
-        else:
-            normalized[parse_range_key(k)] = v
-    return normalized
+def tp_levels_generator(
+        cap: float,
+        tp_order_volume: float,
+        tp_cap_dep: Dict[str, list[int]]
+    ) -> list[tuple[float, float]]:
+
+    for rk, percentages in tp_cap_dep.items():
+        try:
+            (min_cap, max_cap) = parse_range_key(rk)
+        except:
+            continue
+        if min_cap <= cap <= max_cap:
+            # print(f"min_cap <= cap <= max_cap: {min_cap}_{cap}_{max_cap}")
+            return [(p, tp_order_volume) for p in percentages]
+        
+    return TP_LEVELS_DEFAULT
 
 def safe_float(v, default=0.0, abs_val=False):
     try:
@@ -242,6 +234,7 @@ class Utils:
             context: BotContext,
             info_handler: ErrorHandler,
             preform_message: Callable,
+            get_realized_pnl: Callable,
             chat_id: str
         ):    
         info_handler.wrap_foreign_methods(self)
@@ -249,6 +242,7 @@ class Utils:
         self.context = context
         self.info_handler = info_handler    
         self.preform_message = preform_message   
+        self.get_realized_pnl = get_realized_pnl
         self.chat_id = chat_id
 
     @staticmethod
@@ -372,61 +366,43 @@ class Utils:
             return
         
         return contracts
-
+    
+# //////////////////////////        
     async def pnl_report(
-            self,
-            symbol: str,
-            pos_side: str,
-            pos_data: dict,
-            cur_price: float,
-            label: str
-        ):
-        if cur_price is None:
-            print(f"[REPORT][ERROR][{label}]: cur_price is None")
-            return
+        self,
+        symbol: str,
+        pos_side: str,
+        pos_data: dict,
+        cur_price: float,
+        label: str
+    ):
+        cur_time = int(time.time() * 1000)
+        start_time = pos_data.get("c_time")
 
-        # sign = 1 для LONG, -1 для SHORT
-        sign = {"LONG": 1, "SHORT": -1}.get(pos_side.upper())
-        if sign is None:
-            print(f"[REPORT][ERROR][{label}]:sign is None")
-            return  
-
-        entry_price = pos_data.get("entry_price")        
-        if not entry_price:
-            print(f"[REPORT][ERROR][{label}]:not entry_price or invest_usd")
-            return
-
-        # Корректируем цену с учётом проскальзывания
-        cur_price_with_slippage = apply_slippage(
-            price=cur_price,
-            slippage_pct=SLIPPAGE_PCT,
-            pos_side=pos_side
+        realized_pnl = await self.get_realized_pnl(
+            symbol=symbol,
+            direction=1 if pos_side == "LONG" else 2,
+            start_time=start_time,
+            end_time=cur_time
         )
 
-        # % PnL
-        pnl_pct = (cur_price_with_slippage - entry_price) / entry_price * 100 * sign
-
-        # $ PnL
-        qty = pos_data.get("vol_assets")  # кол-во монет в позиции
-        pnl_usdt = qty * (cur_price_with_slippage - entry_price) * sign
-        # ///
-
+        if realized_pnl is None:
+            return
+        
+        pnl_usdt = realized_pnl.get("pnl_usdt")
+        pnl_pct = realized_pnl.get("pnl_pct") * pos_data.get("leverage", 1) if realized_pnl.get("pnl_pct") else None
         time_in_deal = None
-        cur_time = int(time.time() * 1000)
-        if pos_data.get("c_time"):
-            time_in_deal = cur_time - pos_data.get("c_time")
-
-        leverage = pos_data.get("leverage", 1)
+        if start_time:
+            time_in_deal = cur_time - start_time
 
         body = {
             "symbol": symbol,
-            # "pos_side": pos_side,
-            "pnl_pct": pnl_pct * leverage,
             "pnl_usdt": pnl_usdt,
+            "pnl_pct": pnl_pct,
             "cur_time": cur_time,
-            "time_in_deal": format_duration(time_in_deal)
+            "time_in_deal": format_duration(time_in_deal),
         }
-    
+
         self.preform_message(
             chat_id=self.chat_id,
             marker="report",

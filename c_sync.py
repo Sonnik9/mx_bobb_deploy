@@ -36,8 +36,8 @@ class Synchronizer:
         self._update_lock = asyncio.Lock()
         
         self.chat_id = chat_id        
-        self.fin_settings = self.context.users_configs[chat_id].get("config").get("fin_settings")
-        self.tp_levels = self.fin_settings.get("tp_levels")    
+        self.fin_settings = self.context.users_configs[chat_id]["config"]["fin_settings"]
+        self.tp_levels = self.fin_settings["tp_levels_gen"]    
         self._first_update_done = False
 
         info_handler.wrap_foreign_methods(self)
