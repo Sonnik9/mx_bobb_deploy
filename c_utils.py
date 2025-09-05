@@ -390,7 +390,7 @@ class Utils:
             return
         
         pnl_usdt = realized_pnl.get("pnl_usdt")
-        pnl_pct = realized_pnl.get("pnl_pct") * pos_data.get("leverage", 1) if realized_pnl.get("pnl_pct") else None
+        pnl_pct = realized_pnl.get("pnl_pct")
         time_in_deal = None
         if start_time:
             time_in_deal = cur_time - start_time

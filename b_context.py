@@ -7,7 +7,7 @@ class BotContext:
         """ Инициализируем глобальные структуры"""
         # //
         self.message_cache: list = []  # основной кеш сообщений
-        self.tg_signal_hash_cache: dict = {}
+        self.tg_timing_cache: set = set()
         self.stop_bot: bool = False
         self.start_bot_iteration = False 
         self.stop_bot_iteration = False
@@ -23,4 +23,4 @@ class BotContext:
         self.position_updated_event = asyncio.Event()
         self.orders_updated_event = asyncio.Event()
         self.bloc_async = asyncio.Lock()
-        self.symbol_locks: dict = {}
+        self.signal_locks: dict = {}

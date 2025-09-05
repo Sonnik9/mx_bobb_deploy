@@ -83,10 +83,10 @@ INIT_USER_CONFIG = {
             "sl_type": 2,                                   
             "tp_levels": {"0-500": [10, 25, 50, 75, 100],
                 "500-1000": [5, 10, 15, 20, 30],
-                "1000+": [3, 7, 10, 15, 20],
+                "1000+": [3, 7, 10],
             },
             "tp_levels_gen": [x for x in TP_LEVELS_DEFAULT.copy() if x],
-            "tp_order_volume": 20
+            "tp_order_volume": 33
     }
     },
     "_await_field": None # system
