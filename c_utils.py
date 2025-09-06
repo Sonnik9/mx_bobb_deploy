@@ -182,12 +182,12 @@ def sleep_generator(tp_len):
 def parse_range_key(rk: str) -> tuple[int, float]:
     """Преобразует строку диапазона в кортеж чисел (min, max)"""
     if '+' in rk:  # "1000+"
-        min_val = int(rk.replace('+', '').strip()) * 1000
+        min_val = int(rk.replace('+', '').strip()) * 1_000_000
         max_val = float('inf')
     else:
         parts = rk.split('-')
-        min_val = int(parts[0].strip()) * 1000
-        max_val = int(parts[1].strip()) * 1000
+        min_val = int(parts[0].strip()) * 1_000_000
+        max_val = int(parts[1].strip()) * 1_000_000
     return (min_val, max_val)
 
 def tp_levels_generator(
