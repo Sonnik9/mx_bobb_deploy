@@ -18,7 +18,7 @@ class EntryControl:
         preform_message: Callable,
         utils: Utils,
         direction: str,
-        chat_id: str
+        user_id: str
     ):
         info_handler.wrap_foreign_methods(self)
         self.info_handler = info_handler
@@ -28,8 +28,8 @@ class EntryControl:
         self.preform_message = preform_message
         self.contracts_template = utils.contracts_template
         self.direction = direction
-        self.chat_id = chat_id
-        self.fin_settings = self.context.users_configs[chat_id].get("config").get("fin_settings")
+        self.user_id = user_id
+        self.fin_settings = self.context.users_configs[user_id].get("config").get("fin_settings")
         self.margin_size = self.fin_settings.get("margin_size")
         self.leverage = self.fin_settings.get("leverage")
 
@@ -92,7 +92,7 @@ class EntryControl:
             price=None,
             stopLossPrice=None,
             takeProfitPrice=None,
-            open_type=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("margin_mode", 2),            
+            open_type=self.context.users_configs[self.user_id]["config"]["fin_settings"].get("margin_mode", 2),            
             market_type="MARKET",
             debug=True
         )
@@ -115,7 +115,7 @@ class EntryControl:
                 "cur_time": cur_time,
             }
             self.preform_message(
-                chat_id=self.chat_id,
+                user_id=self.user_id,
                 marker=f"market_order_failed",
                 body=order_failed_body,
                 is_print=True
@@ -128,7 +128,7 @@ class EntryControl:
             "cur_time": cur_time,
         }
         self.preform_message(
-            chat_id=self.chat_id,
+            user_id=self.user_id,
             marker=f"market_order_sent",
             body=order_sent_body,
             is_print=True

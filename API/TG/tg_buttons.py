@@ -1,9 +1,10 @@
 import asyncio
+import aiohttp
 from pprint import pformat
 import copy
 from typing import *
 from a_config import *
-from b_context import BotContext
+from b_context import BotContext, UserConfigs
 from c_log import ErrorHandler, log_time
 from c_utils import validate_init_sl, validate_tp_cap_dep_levels
 from aiogram import Bot, Dispatcher, types, F
@@ -111,7 +112,6 @@ class TelegramUserInterface:
         self.info_handler = info_handler
         self._polling_task: asyncio.Task | None = None
         self._stop_flag = False
-        self.bot_iteration_lock = asyncio.Lock()
 
         # ===== Главное меню =====
         self.main_menu = types.ReplyKeyboardMarkup(
@@ -162,8 +162,8 @@ class TelegramUserInterface:
         return _f
 
     def _awaiting_input(self, message: types.Message) -> bool:
-        chat_id = message.chat.id
-        cfg = self.context.users_configs.get(chat_id)
+        user_id = message.chat.id
+        cfg = self.context.users_configs.get(user_id)
         return bool(cfg and cfg.get("_await_field"))
 
     # ===== Keyboards =====
@@ -202,21 +202,35 @@ class TelegramUserInterface:
             self.context.users_configs[user_id] = copy.deepcopy(INIT_USER_CONFIG)
             self.context.queues_msg[user_id] = []
 
+    def ensure_user_context(self, user_id: int) -> None:
+        if user_id not in self.context.context_vars:
+            self.context.context_vars[user_id] = UserConfigs(
+                session=None,
+                position_updated_event=asyncio.Event(),
+                orders_updated_event=asyncio.Event(),
+                bot_iteration_lock=asyncio.Lock(),
+                start_bot_iteration=False,
+                stop_bot_iteration=False,
+            )
+
     # ===== START / STATUS / STOP =====
     async def start_handler(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)  # 🔹 гарантируем, что конфиг есть
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)  # 🔹 гарантируем, что конфиг есть
+        self.ensure_user_context(user_id)
         await message.answer("Добро пожаловать! Главное меню снизу 👇", reply_markup=self.main_menu)
 
     async def settings_cmd(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
         await message.answer("Выберите раздел настроек:", reply_markup=self._settings_keyboard())
 
     async def status_cmd(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)
-        cfg = self.context.users_configs[chat_id]
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
+        cfg = self.context.users_configs[user_id]
 
         status = "В работе" if getattr(self.context, "start_bot_iteration", False) else "Не активен"
 
@@ -252,12 +266,13 @@ class TelegramUserInterface:
         )
 
     async def start_cmd(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
-        async with self.bot_iteration_lock:
+        async with self.context.context_vars[user_id]["bot_iteration_lock"]:
             # Если уже идёт итерация или есть открытые позиции
-            if self.context.start_bot_iteration or any(
+            if self.context.context_vars[user_id]["start_bot_iteration"] or any(
                 pos.get("in_position", False)
                 for symbol_data in self.context.position_vars.values()
                 for side, pos in symbol_data.items()
@@ -266,19 +281,20 @@ class TelegramUserInterface:
                 await message.answer("Бот уже работает либо есть открытые позиции", reply_markup=self.main_menu)
                 return
 
-            cfg = self.context.users_configs[chat_id]
+            cfg = self.context.users_configs[user_id]
             if validate_user_config(cfg):
-                self.context.start_bot_iteration = True
-                self.context.stop_bot_iteration = False  # на всякий случай
+                self.context.context_vars[user_id]["start_bot_iteration"] = True
+                self.context.context_vars[user_id]["stop_bot_iteration"] = False  # на всякий случай
                 await message.answer("✅ Начало работы", reply_markup=self.main_menu)
             else:
                 await message.answer("❗ Сначала настройте конфиг полностью", reply_markup=self.main_menu)
 
     async def stop_cmd(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
-        async with self.bot_iteration_lock:
+        async with self.context.context_vars[user_id]["bot_iteration_lock"]:
             # Если есть открытые позиции — стоп невозможен
             if any(
                 pos.get("in_position", False)
@@ -289,9 +305,9 @@ class TelegramUserInterface:
                 await message.answer("Сперва закройте все позиции.", reply_markup=self.main_menu)
                 return
 
-            if self.context.start_bot_iteration:
-                self.context.start_bot_iteration = False
-                self.context.stop_bot_iteration = True
+            if self.context.context_vars[user_id]["start_bot_iteration"]:
+                self.context.context_vars[user_id]["start_bot_iteration"] = False
+                self.context.context_vars[user_id]["stop_bot_iteration"] = True
                 # self.context.users_configs = {}  # сброс конфигов
                 await message.answer("⛔ Торговля остановлена", reply_markup=self.main_menu)
             else:
@@ -301,6 +317,7 @@ class TelegramUserInterface:
     async def settings_handler(self, callback: types.CallbackQuery):
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
         await callback.answer()
         await callback.message.edit_text(
             "Выберите раздел настроек:", reply_markup=self._settings_keyboard()
@@ -309,6 +326,7 @@ class TelegramUserInterface:
     async def mexc_settings_handler(self, callback: types.CallbackQuery):
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
         await callback.answer()
         await callback.message.edit_text(
             "Настройки MEXC:", reply_markup=self._mexc_keyboard()
@@ -317,6 +335,7 @@ class TelegramUserInterface:
     async def fin_settings_handler(self, callback: types.CallbackQuery):
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
         await callback.answer()
         await callback.message.edit_text(
             "FIN SETTINGS:", reply_markup=self._fin_keyboard()
@@ -324,9 +343,10 @@ class TelegramUserInterface:
 
     # ===== Обработка текстового ввода =====
     async def text_message_handler(self, message: types.Message):
-        chat_id = message.chat.id
-        self.ensure_user_config(chat_id)
-        cfg = self.context.users_configs.get(chat_id)
+        user_id = message.chat.id
+        self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
+        cfg = self.context.users_configs.get(user_id)
         if not cfg or not cfg.get("_await_field"):
             return
 
@@ -437,13 +457,14 @@ class TelegramUserInterface:
         # Авто-запуск если конфиг валиден
         if validate_user_config(cfg):
             # self.context.start_bot_iteration = True
-            await message.answer("✅ Конфиг полностью заполнен! Торговлю можно запускать.", reply_markup=self.main_menu)
+            await message.answer("✅ Конфиг полностью заполнен! Можно начинать торговлю.", reply_markup=self.main_menu)
 
     # ===== Callback для TP Ranges (0-500, 500-1000, 1000+) =====
     async def tp_range_select(self, callback: types.CallbackQuery):
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         rk = callback.data.replace("SET_TP_RANGE_", "")
         cfg = self.context.users_configs[user_id]
@@ -460,6 +481,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "MEXC", "field": "api_key"}
         await callback.message.answer("Введите API Key:")
@@ -468,6 +490,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "MEXC", "field": "api_secret"}
         await callback.message.answer("Введите Secret Key:")
@@ -476,6 +499,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "MEXC", "field": "proxy_url"}
         await callback.message.answer(
@@ -488,6 +512,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "MEXC", "field": "u_id"}
         await callback.message.answer("Введите User ID:")
@@ -496,6 +521,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "margin_size"}
         await callback.message.answer("Введите Margin Size (число):")
@@ -504,6 +530,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "margin_mode"}
         await callback.message.answer("Введите Margin Mode (1 -- Изолированная, 2 -- Кросс):")
@@ -512,6 +539,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "leverage"}
         await callback.message.answer("Введите Leverage (число):")
@@ -520,6 +548,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "sl"}
         await callback.message.answer("Введите основной Stop Loss в процентах (0 для отключения):")
@@ -528,6 +557,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "sl_type"}
         await callback.message.answer("Введите тип Stop Loss: 1 – фиксированный, 2 – динамический:")
@@ -536,6 +566,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -548,6 +579,7 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         self.context.users_configs[user_id]["_await_field"] = {"section": "fin_settings", "field": "tp_order_volume"}
         await callback.message.answer("Введите TP Order Volume (число):")
@@ -557,10 +589,11 @@ class TelegramUserInterface:
         await callback.answer()
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
         cfg = self.context.users_configs[user_id]
         if validate_user_config(cfg):
-            self.context.start_bot_iteration = True
+            self.context.context_vars[user_id]["start_bot_iteration"] = True
             await callback.message.answer("✅ Торговля запущена", reply_markup=self.main_menu)
         else:
             await callback.message.answer("❗ Сначала настройте конфиг полностью", reply_markup=self.main_menu)
@@ -576,10 +609,11 @@ class TelegramUserInterface:
             return
         user_id = callback.from_user.id
         self.ensure_user_config(user_id)
+        self.ensure_user_context(user_id)
 
-        if self.context.start_bot_iteration:
-            self.context.start_bot_iteration = False
-            self.context.stop_bot_iteration = True
+        if self.context.context_vars[user_id]["start_bot_iteration"]:
+            self.context.context_vars[user_id]["start_bot_iteration"] = False
+            self.context.context_vars[user_id]["stop_bot_iteration"] = True
             await callback.message.answer("⛔ Торговля остановлена", reply_markup=self.main_menu)
         else:
             await callback.message.answer("Это действие невозможно, так как торговля ещё не начата.", reply_markup=self.main_menu)
@@ -593,12 +627,3 @@ class TelegramUserInterface:
 
     async def stop(self):
         pass
-        # self._stop_flag = True
-        # if hasattr(self.bot, "session") and self.bot.session:
-        #     await self.bot.session.close()
-        # if self._polling_task:
-        #     try:
-        #         await self._polling_task
-        #     except asyncio.CancelledError:
-        #         pass
-        #     self._polling_task = None

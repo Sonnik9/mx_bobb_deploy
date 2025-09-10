@@ -18,7 +18,7 @@ class TPControl:
         utils: Utils,
         direction: str,
         tp_control_frequency: float,
-        chat_id: str
+        user_id: str
     ):
         info_handler.wrap_foreign_methods(self)
         self.info_handler = info_handler
@@ -29,7 +29,7 @@ class TPControl:
         self.contracts_template = utils.contracts_template
         self.tp_control_frequency = tp_control_frequency
         self.direction = direction   
-        self.chat_id = chat_id
+        self.user_id = user_id
         # //        
 
     async def tp_factory(
@@ -62,13 +62,13 @@ class TPControl:
 
         
         remaining_contracts = total_contracts
-        for idx, (indent, volume) in enumerate(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"], start=1):
+        for idx, (indent, volume) in enumerate(self.context.users_configs[self.user_id]["config"]["fin_settings"]["tp_levels_gen"], start=1):
             try:
                 success = False
                 reason = "N/A"
                 cur_time = int(time.time() * 1000)
                 # // set contracts:   
-                if idx < len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]):
+                if idx < len(self.context.users_configs[self.user_id]["config"]["fin_settings"]["tp_levels_gen"]):
                     cur_contract = remaining_contracts * volume / 100
                 else:
                     cur_contract = remaining_contracts
@@ -95,7 +95,7 @@ class TPControl:
                     side="SELL",           # -- всегда для закрытия
                     position_side=self.direction,
                     leverage=leverage,
-                    open_type=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("margin_mode", 2),
+                    open_type=self.context.users_configs[self.user_id]["config"]["fin_settings"].get("margin_mode", 2),
                     debug_price=target_price,
                     price=target_price,
                     stopLossPrice=None,
@@ -129,13 +129,13 @@ class TPControl:
             finally:
                 if not success:
                     self.preform_message(
-                        chat_id=self.chat_id,
+                        user_id=self.user_id,
                         marker=f"tp_order_failed",
                         body={"symbol": symbol, "reason": reason, "cur_time": cur_time},
                         is_print=True
                     )
                 # === Pause ===
-                sleep_pause = sleep_generator(tp_len=len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]))[idx-1]
+                sleep_pause = sleep_generator(tp_len=len(self.context.users_configs[self.user_id]["config"]["fin_settings"]["tp_levels_gen"]))[idx-1]
                 # print(f"#{idx}: sleep {sleep_pause:.2f} сек")
                 await asyncio.sleep(sleep_pause)
 
@@ -174,7 +174,7 @@ class TPControl:
 
         if not success:
             self.preform_message(
-                chat_id=self.chat_id,
+                user_id=self.user_id,
                 marker=f"sl_order_failed",
                 body={"symbol": symbol, "reason": reason, "cur_time": cur_time},
                 is_print=True
@@ -182,7 +182,7 @@ class TPControl:
         progress = pos_data["progress"]
         if progress is not None and progress > 0:
             self.preform_message(
-                chat_id=self.chat_id,
+                user_id=self.user_id,
                 marker="progress",
                 body={
                     "symbol": symbol,
@@ -267,7 +267,7 @@ class TPControl:
             if is_move_sl: pos_data["progress"] = current_progress
             # print(f"current_progress: {current_progress}")
 
-            if pos_data["progress"] >= len(self.context.users_configs[self.chat_id]["config"]["fin_settings"]["tp_levels_gen"]):
+            if pos_data["progress"] >= len(self.context.users_configs[self.user_id]["config"]["fin_settings"]["tp_levels_gen"]):
                 pos_data["force_reset_flag"] = True
                 print(f"[{debug_label}] все тейк-профит лимитки исполнены. {log_time()}")
                 return True
@@ -287,8 +287,8 @@ class TPControl:
         sl_price = calc_next_sl(
             entry_price = pos_data.get("entry_price"),
             progress=pos_data.get("progress"),
-            base_sl=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl"),
-            sl_type=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl_type"),
+            base_sl=self.context.users_configs[self.user_id]["config"]["fin_settings"].get("sl"),
+            sl_type=self.context.users_configs[self.user_id]["config"]["fin_settings"].get("sl_type"),
             tp_prices=pos_data.get("tp_prices"),
             sign=sign,
             price_precision=price_precision
@@ -299,7 +299,7 @@ class TPControl:
                 "symbol": symbol,
                 "position_side": self.direction,
                 "leverage": pos_data.get("leverage"),
-                "open_type": self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("margin_mode", 2),
+                "open_type": self.context.users_configs[self.user_id]["config"]["fin_settings"].get("margin_mode", 2),
                 "close_order_type": "sl",
                 "order_type": 1,
                 "contract": pos_data.get("contracts"),
@@ -347,7 +347,7 @@ class TPControl:
             )            
             pos_data["tp_initiated"] = True
 
-        if self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("sl") is not None:
+        if self.context.users_configs[self.user_id]["config"]["fin_settings"].get("sl") is not None:
             return await self.sl_control(
                 symbol=symbol,                
                 symbol_data=symbol_data,

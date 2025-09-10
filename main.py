@@ -1,16 +1,17 @@
 import asyncio
 import time
 from typing import *
+
 from a_config import *
-from b_context import BotContext
+from b_context import BotContext, UserInstances
 from b_constructor import PositionVarsSetup
 from b_network import NetworkManager
 from API.TG.tg_parser import TgBotWatcherAiogram
 from API.TG.tg_notifier import TelegramNotifier
 from API.TG.tg_buttons import TelegramUserInterface
-from API.MX.mx import MexcClient
+from API.MX.mx import MexcClient, MexcPublic
 from API.MX.streams import MxFuturesOrderWS
-from API.MX.mx_bypass.api import MexcFuturesAPI
+# from API.MX.mx_bypass.api import MexcFuturesAPI
 from TRADING.entry import EntryControl
 from TRADING.exit import ExitControl
 from TRADING.tp import TPControl
@@ -64,7 +65,7 @@ class Core:
         self.context.pos_loaded_cache = {}
         self.instruments_data = {}        
 
-    def _start_usual_context(self):
+    def _start_validation(self):
         if not validate_direction(self.direction):
             return False     
            
@@ -72,62 +73,18 @@ class Core:
             self.cache_file_manager = FileManager(info_handler=self.info_handler)
 
         return True
-
-    async def _start_user_context(self, chat_id: int):
-        """Инициализация юзер-контекста (сессии, клиентов, стримов и контролов)"""
-
-        user_context = self.context.users_configs[chat_id]
-        mexc_cfg = user_context.get("config", {}).get("MEXC", {})
-
-        proxy_url  = mexc_cfg.get("proxy_url")
-        api_key    = mexc_cfg.get("api_key")
-        api_secret = mexc_cfg.get("api_secret")
-        u_id       = mexc_cfg.get("u_id")
-
-        # print("♻️ Пересоздаём user_context сессию")
-
-        # --- Чистим старый connector ---
-        if hasattr(self, "connector") and self.connector:
-            await self.connector.shutdown_session()
-            self.connector = None
-
-        # --- Создаём новый connector ---
-        self.connector = NetworkManager(
-            context=self.context,
-            info_handler=self.info_handler,
-            proxy_url=proxy_url
-        )
-        self.connector.start_ping_loop()
-
-        # --- MEXC client ---
-        self.mx_client = MexcClient(
-            context=self.context,
-            connector=self.connector,
-            info_handler=self.info_handler,
-            api_key=api_key,
-            api_secret=api_secret,
-            token=u_id,
-        )
-
-        # --- Order stream ---
-        self.order_stream = MxFuturesOrderWS(
-            api_key=api_key,
-            api_secret=api_secret,
-            context=self.context,
-            info_handler=self.info_handler,
-            proxy_url=proxy_url
-        )
-        asyncio.create_task(self.order_stream.start())  # запускаем только новый
+    
+    def _start_common_context(self):
 
         # --- Вспомогалки ---
+        # print(self.utils)
+        self.mx_public = MexcPublic(context=self.context)
+
         self.utils = Utils(
             context=self.context,
             info_handler=self.info_handler,
-            preform_message=self.notifier.preform_message,
-            get_realized_pnl=self.mx_client.get_realized_pnl,
-            chat_id=chat_id
+            preform_message=self.notifier.preform_message
         )
-        # print(self.utils)
 
         self.pos_setup = PositionVarsSetup(
             context=self.context,
@@ -138,21 +95,17 @@ class Core:
         # --- Торговые контролы ---
         self.entry = EntryControl(
             context=self.context,
-            info_handler=self.info_handler,
-            mx_client=self.mx_client,
+            info_handler=self.info_handler,            
             preform_message=self.notifier.preform_message,
             utils=self.utils,
             direction=self.direction,
-            chat_id=chat_id
         )
 
         self.exit = ExitControl(
             context=self.context,
             info_handler=self.info_handler,
-            mx_client=self.mx_client,
             preform_message=self.notifier.preform_message,
             direction=self.direction,
-            chat_id=chat_id
         )
 
         self.sync = Synchronizer(
@@ -160,31 +113,94 @@ class Core:
             info_handler=self.info_handler,
             set_pos_defaults=self.pos_setup.set_pos_defaults,
             pnl_report=self.utils.pnl_report,
-            mx_client=self.mx_client,
             preform_message=self.notifier.preform_message,
             positions_update_frequency=POSITIONS_UPDATE_FREQUENCY,
             exit=self.exit,
             use_cache=USE_CACHE,
-            chat_id=chat_id
         )
 
         self.tp_control = TPControl(
             context=self.context,
             info_handler=self.info_handler,
-            mx_client=self.mx_client,
             preform_message=self.notifier.preform_message,
             utils=self.utils,
             direction=self.direction,
             tp_control_frequency=TP_CONTROL_FREQUENCY,
-            chat_id=chat_id
         )
 
-        # --- Заворачиваем внешние методы в обработчик ошибок ---
+    async def _start_user_context(self, user_id: int):
+        """Инициализация юзер-контекста (сессии, клиентов, стримов и контролов)"""
+
+        user_context = self.context.users_configs[user_id]
+        mexc_cfg = user_context.get("config", {}).get("MEXC", {})
+
+        proxy_url = mexc_cfg.get("proxy_url")
+        api_key = mexc_cfg.get("api_key")
+        api_secret = mexc_cfg.get("api_secret")
+        u_id = mexc_cfg.get("u_id")
+
+        # 🔹 Создаём или получаем UserInstances
+        if user_id not in self.context.users_instances:
+            self.context.users_instances[user_id] = UserInstances()
+
+        user_instance = self.context.users_instances[user_id]
+
+        # --- Чистим старый connector ---
+        if user_instance.connector is not None:
+            await user_instance.connector.shutdown_session()
+            user_instance.connector = None
+
+        # --- Создаём новый connector ---
+        user_instance.connector = NetworkManager(
+            context=self.context,
+            info_handler=self.info_handler,
+            proxy_url=proxy_url
+        )
+        user_instance.connector.start_ping_loop()
+
+        # --- Создаём MEXC client ---
+        user_instance.mx_client = MexcClient(
+            context=self.context,
+            connector=user_instance.connector,
+            info_handler=self.info_handler,
+            api_key=api_key,
+            api_secret=api_secret,
+            token=u_id,
+        )
+
+        # --- Создаём Order stream ---
+        user_instance.order_stream = MxFuturesOrderWS(
+            api_key=api_key,
+            api_secret=api_secret,
+            context=self.context,
+            info_handler=self.info_handler,
+            proxy_url=proxy_url
+        )
+        asyncio.create_task(user_instance.order_stream.start())
+
+        # --- Запуск наблюдателей Telegram ---
+        self.tg_watcher.register_handler(tag=TEG_ANCHOR)
+        if not USE_CACHE:
+            self.cache_file_manager = {}
+
+        # --- Запуск positions_flow_manager ---
+        if not self.positions_task or self.positions_task.done():
+            self.positions_task = asyncio.create_task(
+                self.sync.positions_flow_manager(cache_file_manager=self.cache_file_manager)
+            )
+
+        # --- Ожидание события обновления ордеров ---
+        orders_event = self.context.context_vars[user_id]["orders_updated_event"]
+        await orders_event.wait()
+        orders_event.clear()
+        print("[DEBUG] Order update event cleared, entering main signal loop")
+
+        # --- Оборачиваем внешние методы в обработчик ошибок ---
         self.info_handler.wrap_foreign_methods(self)
 
     async def handle_signal(
         self,
-        chat_id,
+        user_id,
         symbol: str,
         cap: float,
         last_timestamp: str,
@@ -195,7 +211,7 @@ class Core:
         async with lock:
             try:
                 # ==== Финансовые настройки пользователя ====
-                fin_settings = self.context.users_configs[chat_id]["config"]["fin_settings"]
+                fin_settings = self.context.users_configs[user_id]["config"]["fin_settings"]
 
                 # Генерируем новые tp_levels
                 new_tp_levels = tp_levels_generator(
@@ -227,7 +243,7 @@ class Core:
                 # ==== Отправка сигнала ====
                 signal_body = {"symbol": symbol, "cur_time": last_timestamp}
                 self.notifier.preform_message(
-                    chat_id=chat_id,
+                    user_id=user_id,
                     marker="signal",
                     body=signal_body,
                     is_print=True
@@ -240,95 +256,40 @@ class Core:
                 )
 
             finally:
-                # ==== TP Control ====
-                symbol_data = self.context.position_vars.get(symbol)
-                if symbol_data:  # проверка, чтобы не было KeyError
-                    if debug_label not in self.tp_tasks or self.tp_tasks[debug_label].done():
-                        self.tp_tasks[debug_label] = asyncio.create_task(
-                            self.tp_control.tp_control_flow(
-                                symbol=symbol,
-                                symbol_data=symbol_data,
-                                sign=1 if self.direction == "LONG" else -1,
-                                debug_label=debug_label,
-                            )
-                        )
-                else:
-                    print(f"[WARNING] TP control skipped: symbol {symbol} not in position_vars yet")
+                pass
+
 
     async def _run_iteration(self) -> None:
         """Одна итерация торговли (от старта до стопа)."""
         print("[CORE] Iteration started")
 
-        # --- Проверяем базовый контекст ---
-        if not self._start_usual_context():
-            self.context.stop_bot_iteration = True
-            print("[DEBUG] Usual context start failed, iteration stopped")
-            return
-        print("[DEBUG] Usual context initialized successfully")
-
         # --- Перебор пользователей ---
-        for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-            # print(f"[DEBUG] Processing user {num} | chat_id: {chat_id}")
-            
-            if num > 1:
-                self.info_handler.debug_info_notes(
-                    f"Бот настроен только для одного пользователя! "
-                    f"Для текущего chat_id: {chat_id} опция торговли недоступна. {log_time()}"
-                )
-                continue
+        for num, (user_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+            # print(f"[DEBUG] Processing user {num} | user_id: {user_id}")
 
             try:
-                # --- Запуск контекста пользователя ---
-                # print(f"[DEBUG] Starting user context for chat_id: {chat_id}")
-                await self._start_user_context(chat_id=chat_id)
+                await self._start_user_context(user_id=user_id)
 
                 # --- Дебаг MEXC настройки ---
-                user_config: Dict[str, Any] = self.context.users_configs.get(chat_id, {})
+                user_config: Dict[str, Any] = self.context.users_configs.get(user_id, {})
                 mexc_cfg: Dict[str, Any] = user_config.get("config", {}).get("MEXC", {})
-                # print(f"[DEBUG] MEXC config for user {chat_id}: {mexc_cfg}")
+                # print(f"[DEBUG] MEXC config for user {user_id}: {mexc_cfg}")
 
                 required_keys = ["api_key", "api_secret", "u_id", "proxy_url"]
                 for key in required_keys:
                     if key not in mexc_cfg or mexc_cfg[key] is None:
-                        print(f"[WARNING] MEXC {key} not set for user {chat_id}")
+                        print(f"[WARNING] MEXC {key} not set for user {user_id}")
 
             except Exception as e:
-                err_msg = f"[ERROR] Failed to start user context for chat_id {chat_id}: {e}"
+                err_msg = f"[ERROR] Failed to start user context for user_id {user_id}: {e}"
                 self.info_handler.debug_error_notes(err_msg, is_print=True)
                 continue
 
-        # --- Получаем инструменты с биржи ---
-        try:
-            self.instruments_data = await self.mx_client.get_instruments()
-            if self.instruments_data:
-                # save_to_json(self.instruments_data)
-                print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
-                pass
-            else:
-                self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
-
-        except Exception as e:
-            self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
-        # return
-
-        # --- Запуск наблюдателей ---
-        self.tg_watcher.register_handler(tag=TEG_ANCHOR)
-        if not USE_CACHE:
-            self.cache_file_manager = {}
-        # --- Запускаем positions_flow_manager ---
-        if not self.positions_task or self.positions_task.done():
-            self.positions_task = asyncio.create_task(
-                self.sync.positions_flow_manager(cache_file_manager=self.cache_file_manager)
-            )
-
-        await self.context.orders_updated_event.wait()
-        self.context.orders_updated_event.clear()
-        print("[DEBUG] Order update event cleared, entering main signal loop")
-
         instrume_update_interval = 300.0
         last_instrume_time = time.monotonic()
+        first_signal = False
 
-        while not self.context.stop_bot_iteration and not self.context.stop_bot:
+        while not self.context.stop_bot:
             try:
                 signal_tasks_val = self.context.message_cache[-SIGNAL_PROCESSING_LIMIT:] if self.context.message_cache else None
                 if not signal_tasks_val:
@@ -363,38 +324,52 @@ class Core:
 
                     diff_sec = time.time() - (last_timestamp / 1000)
 
-                    for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-                        if num > 1:
-                            continue
-                        if diff_sec < SIGNAL_TIMEOUT:
+                    for num, (user_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+                        if not self.context.context_vars[user_id]["stop_bot_iteration"]:
 
-                            # если замок уже существует для msg_key, пропускаем
-                            if msg_key in self.context.signal_locks:
-                                continue
+                            if diff_sec < SIGNAL_TIMEOUT:
 
-                            # создаём замок и оставляем его навсегда
-                            cur_lock = self.context.signal_locks[msg_key] = asyncio.Lock()
+                                # если замок уже существует для msg_key, пропускаем
+                                if msg_key in self.context.signal_locks:
+                                    continue
 
-                            asyncio.create_task(self.handle_signal(
-                                chat_id=chat_id,
-                                symbol=symbol,
-                                cap=cap,
-                                last_timestamp=last_timestamp,
-                                debug_label=debug_label,
-                                lock=cur_lock
-                            ))
+                                # создаём замок и оставляем его навсегда
+                                cur_lock = self.context.signal_locks[msg_key] = asyncio.Lock()
+                                first_signal = True
 
+                                asyncio.create_task(self.handle_signal(
+                                    user_id=user_id,
+                                    symbol=symbol,
+                                    cap=cap,
+                                    last_timestamp=last_timestamp,
+                                    debug_label=debug_label,
+                                    lock=cur_lock
+                                ))
 
             except Exception as e:
                 err_msg = f"[ERROR] main loop: {e}\n" + traceback.format_exc()
                 self.info_handler.debug_error_notes(err_msg, is_print=True)
 
             finally:
+                # ==== TP Control ====
+                if first_signal:
+                    symbol_data = self.context.position_vars.get(symbol)
+                    if symbol_data:  # проверка, чтобы не было KeyError
+                        if debug_label not in self.tp_tasks or self.tp_tasks[debug_label].done():
+                            self.tp_tasks[debug_label] = asyncio.create_task(
+                                self.tp_control.tp_control_flow(
+                                    symbol=symbol,
+                                    symbol_data=symbol_data,
+                                    sign=1 if self.direction == "LONG" else -1,
+                                    debug_label=debug_label,
+                                )
+                            )
+                    else:
+                        print(f"[WARNING] TP control skipped: symbol {symbol} not in position_vars yet")
+
                 try:
-                    for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-                        if num > 1:
-                            continue
-                        await self.notifier.send_report_batches(chat_id=chat_id, batch_size=1)
+                    for num, (user_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+                        await self.notifier.send_report_batches(user_id=user_id, batch_size=1)
                 except Exception as e:
                     err_msg = f"[ERROR] main finally block: {e}\n" + traceback.format_exc()
                     self.info_handler.debug_error_notes(err_msg, is_print=True)
@@ -404,16 +379,13 @@ class Core:
                 # обновление кэша
                 if now - last_instrume_time >= instrume_update_interval:
                     try:
-                        self.instruments_data = await self.mx_client.get_instruments()
-                        if self.instruments_data:
-                            # save_to_json(self.instruments_data)
-                            # print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
-                            pass
-                        else:
+                        self.instruments_data = await self.mx_client.self.mx_public()
+                        if not self.instruments_data:
                             self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
 
                     except Exception as e:
                         self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+
                     last_instrume_time = now
 
                 await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
@@ -447,45 +419,70 @@ class Core:
 
             await self.tg_interface.run()  # polling стартует уже с зарегистрированными хендлерами
 
+        self._start_common_context()
+
+        # --- Получаем инструменты с биржи ---
+        try:
+            self.instruments_data = await self.mx_client.self.mx_public()
+            if self.instruments_data:
+                # save_to_json(self.instruments_data)
+                print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
+                pass
+            else:
+                self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+
+        except Exception as e:
+            self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+        # return
+
+        # --- Проверяем базовый контекст ---
+        if not self._start_validation():
+            for num, (user_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+                self.context.context_vars[user_id]["stop_bot_iteration"] = True
+            print("[DEBUG] Usual context start failed, iteration stopped")
+            return
+        # print("[DEBUG] Usual context initialized successfully")
+
         while not self.context.stop_bot:
-            if debug: print("[CORE] Новый цикл run_forever, обнуляем флаги итерации")
-            self.context.start_bot_iteration = False
-            self.context.stop_bot_iteration = False
+            for num, (user_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+                if debug: print(f"[CORE] Новый цикл run_forever для {user_id}, обнуляем флаги итерации")
+                self.context.context_vars[user_id]["start_bot_iteration"] = False
+                self.context.context_vars[user_id]["stop_bot_iteration"] = False
 
-            # ждём нажатия кнопки START
-            if debug: print("[CORE] Ожидание кнопки START...")
-            while not self.context.start_bot_iteration and not self.context.stop_bot:
-                await asyncio.sleep(0.3)
+                # ждём нажатия кнопки START
+                if debug: print("[CORE] Ожидание кнопки START...")
+                while not self.context.context_vars[user_id]["start_bot_iteration"] and not self.context.stop_bot:
+                    await asyncio.sleep(0.3)
 
-            if self.context.stop_bot:
-                if debug: print("[CORE] Stop флаг поднят, выходим из run_forever")
-                break
+                if self.context.stop_bot:
+                    if debug: print("[CORE] Stop флаг поднят, выходим из run_forever")
+                    break
 
-            # запускаем итерацию торговли
-            try:
-                if debug: print("[CORE] Запуск торговой итерации (_run_iteration)...")
-                await self._run_iteration()
-                if debug: print("[CORE] Торговая итерация завершена")
-            except Exception as e:
-                self.info_handler.debug_error_notes(f"[CORE] Ошибка в итерации: {e}", is_print=True)
+                # запускаем итерацию торговли
+                try:
+                    if debug: print("[CORE] Запуск торговой итерации (_run_iteration)...")
+                    await self._run_iteration()
+                    if debug: print("[CORE] Торговая итерация завершена")
+                except Exception as e:
+                    self.info_handler.debug_error_notes(f"[CORE] Ошибка в итерации: {e}", is_print=True)
 
-            # очищаем ресурсы итерации
-            try:
-                if debug: print("[CORE] Очистка ресурсов итерации (_shutdown_iteration)...")
-                await self._shutdown_iteration(debug=debug)
-                if debug: print("[CORE] Очистка ресурсов завершена")
-            except Exception as e:
-                self.info_handler.debug_error_notes(f"[CORE] Ошибка при shutdown итерации: {e}", is_print=True)
+                # очищаем ресурсы итерации
+                try:
+                    if debug: print("[CORE] Очистка ресурсов итерации (_shutdown_iteration)...")
+                    await self._shutdown_iteration(user_id=user_id, debug=debug)
+                    if debug: print("[CORE] Очистка ресурсов завершена")
+                except Exception as e:
+                    self.info_handler.debug_error_notes(f"[CORE] Ошибка при shutdown итерации: {e}", is_print=True)
 
-            # если была локальная остановка — ждём нового START
-            if self.context.stop_bot_iteration:
-                self.info_handler.debug_info_notes("[CORE] Перезапуск по кнопке STOP", is_print=True)
-                if debug: print("[CORE] Ожидание следующего START после STOP")
-                continue
+                # если была локальная остановка — ждём нового START
+                if self.context.context_vars[user_id]["stop_bot_iteration"]:
+                    self.info_handler.debug_info_notes("[CORE] Перезапуск по кнопке STOP", is_print=True)
+                    if debug: print("[CORE] Ожидание следующего START после STOP")
+                    continue
 
         if debug: print("[CORE] run_forever finished")
 
-    async def _shutdown_iteration(self, debug: bool = True):
+    async def _shutdown_iteration(self, user_id: str, debug: bool = True):
         """Закрывает итерационные ресурсы и обнуляет инстансы."""
 
         # --- Остановка цикла positions_flow_manager ---
@@ -499,25 +496,25 @@ class Core:
             self.positions_task = None
 
         # --- Order stream ---
-        if getattr(self, "order_stream", None):
+        if "order_stream" in self.context.users_instances[user_id]:
             try:
-                await asyncio.wait_for(self.order_stream.disconnect(), timeout=5)
+                await asyncio.wait_for(self.context.users_instances[user_id]["order_stream"].disconnect(), timeout=5)
             except Exception as e:
                 if debug:
                     print(f"[CORE] order_stream.disconnect() error: {e}")
             finally:
-                self.order_stream = None
+                self.context.users_instances[user_id]["order_stream"] = None
 
         # --- Connector ---
-        if getattr(self, "connector", None):
+        if "connector" in self.context.users_instances[user_id]:
             try:
-                await asyncio.wait_for(self.connector.shutdown_session(), timeout=5)
+                await asyncio.wait_for(self.context.users_instances[user_id]["connector"].shutdown_session(), timeout=5)
             except Exception as e:
                 if debug:
                     print(f"[CORE] connector.shutdown_session() error: {e}")
             finally:
-                self.context.session = None
-                self.connector = None
+                self.context.context_vars[user_id]["session"] = None
+                self.context.users_instances[user_id]["connector"] = None
 
         for key, task in list(self.tp_tasks.items()):
             task.cancel()
@@ -528,7 +525,7 @@ class Core:
         self.tp_tasks.clear()
 
         # --- Сброс прочих ссылок ---
-        self.mx_client = None
+        self.context.users_instances[user_id]["mx_client"] = None
         self.sync = None
         self.tp_control = None
         self.utils = None
@@ -538,8 +535,6 @@ class Core:
 
         self.context.position_vars = {}
 
-        # if debug:
-        #     print("[CORE] Iteration shutdown complete")
 
 async def main():
     instance = Core()

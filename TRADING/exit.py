@@ -14,7 +14,7 @@ class ExitControl:
         mx_client: MexcClient,
         preform_message: Callable,
         direction: str,
-        chat_id: str
+        user_id: str
     ):
         info_handler.wrap_foreign_methods(self)
         self.info_handler = info_handler
@@ -23,7 +23,7 @@ class ExitControl:
         self.mx_client = mx_client
         self.preform_message = preform_message
         self.direction = direction
-        self.chat_id = chat_id
+        self.user_id = user_id
 
     async def exit_template(
         self,
@@ -48,7 +48,7 @@ class ExitControl:
                 price=None,
                 stopLossPrice=None,
                 takeProfitPrice=None,
-                open_type=self.context.users_configs[self.chat_id]["config"]["fin_settings"].get("margin_mode", 2),            
+                open_type=self.context.users_configs[self.user_id]["config"]["fin_settings"].get("margin_mode", 2),            
                 market_type="MARKET",
                 debug=False
             )
@@ -71,7 +71,7 @@ class ExitControl:
                 #     "cur_time": cur_time,
                 # }
                 # self.preform_message(
-                #     chat_id=self.chat_id,
+                #     user_id=self.user_id,
                 #     marker=f"market_order_failed",
                 #     body=order_failed_body,
                 #     is_print=True

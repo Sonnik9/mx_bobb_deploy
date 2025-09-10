@@ -24,7 +24,7 @@ class MessageFormatter:
 
     def preform_message(
         self,
-        chat_id: str,
+        user_id: str,
         marker: str,
         body: dict,
         is_print: bool = True
@@ -128,7 +128,7 @@ class MessageFormatter:
             else:
                 print(f"Неизвестный тип сообщения в preform_message. Marker: {marker}")
 
-            self.context.queues_msg[chat_id].append(msg)
+            self.context.queues_msg[user_id].append(msg)
             if is_print:
                 print(msg)
 
@@ -144,44 +144,44 @@ class TelegramNotifier(MessageFormatter):
         super().__init__(context, info_handler)
         self.bot = bot
 
-    async def send_report_batches(self, chat_id: int, batch_size: int = 1):
-        queue = self.context.queues_msg[chat_id]
+    async def send_report_batches(self, user_id: int, batch_size: int = 1):
+        queue = self.context.queues_msg[user_id]
         while queue:
             batch = queue[:batch_size]
             text_block = "\n\n".join(batch)
-            await self._send_message(chat_id, text_block)
+            await self._send_message(user_id, text_block)
             del queue[:len(batch)]
             await asyncio.sleep(0.25)
 
-    async def _send_message(self, chat_id: int, text: str):
+    async def _send_message(self, user_id: int, text: str):
         while not self.context.stop_bot and not self.context.stop_bot_iteration:
             try:
-                msg = await self.bot.send_message(chat_id, text, parse_mode="HTML")
+                msg = await self.bot.send_message(user_id, text, parse_mode="HTML")
                 return msg
             except TelegramNetworkError as e:
                 wait = random.uniform(1, 3)
                 self.info_handler.debug_error_notes(
-                    f"[TG SEND][{chat_id}] Network error: {e}. Retrying in {wait:.1f}s", is_print=True
+                    f"[TG SEND][{user_id}] Network error: {e}. Retrying in {wait:.1f}s", is_print=True
                 )
                 await asyncio.sleep(wait)
             except TelegramRetryAfter as e:
                 wait = int(getattr(e, "retry_after", 5))
                 self.info_handler.debug_error_notes(
-                    f"[TG SEND][{chat_id}] Rate limit. Waiting {wait}s", is_print=True
+                    f"[TG SEND][{user_id}] Rate limit. Waiting {wait}s", is_print=True
                 )
                 await asyncio.sleep(wait)
             except TelegramForbiddenError:
                 self.info_handler.debug_error_notes(
-                    f"[TG SEND][{chat_id}] Bot is blocked by user. Stopping sending.", is_print=True
+                    f"[TG SEND][{user_id}] Bot is blocked by user. Stopping sending.", is_print=True
                 )
                 return None
             except TelegramAPIError as e:
                 self.info_handler.debug_error_notes(
-                    f"[TG SEND][{chat_id}] API error: {e}. Exit loop.", is_print=True
+                    f"[TG SEND][{user_id}] API error: {e}. Exit loop.", is_print=True
                 )
                 return None
             except Exception as e:
                 self.info_handler.debug_error_notes(
-                    f"[TG SEND][{chat_id}] Unexpected error: {e}. Exit loop.", is_print=True
+                    f"[TG SEND][{user_id}] Unexpected error: {e}. Exit loop.", is_print=True
                 )
                 return None

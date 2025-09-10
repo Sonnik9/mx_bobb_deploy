@@ -56,6 +56,33 @@ def async_reconnector(debug: bool = True, stop_attr: str = None, stop_iter_attr:
     return decorator
 
 
+class MexcPublic:
+    def __init__(
+            self,
+            context: BotContext,
+            # info_handler: ErrorHandler,
+        ):
+        self.api = MexcFuturesAPI(token=None, testnet=False)
+        self.stop_bot = context.stop_bot
+        self.stop_bot_iteration = False
+
+    # ----------------------------
+    # Публичные методы
+    @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")
+    async def get_instruments(self, session: Optional[aiohttp.ClientSession] = None) -> Optional[List[Dict]]:
+        response = await self.api.get_instruments(session)
+        if response and response.success and response.data:
+            return response.data  # возвращаем сразу список инструментов
+        return None
+
+    @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")
+    async def get_fair_price(self, symbol: str, session: Optional[aiohttp.ClientSession] = None) -> Optional[float]:
+        response = await self.api.get_fair_price(symbol, session)
+        if response and response.success and response.data and "fairPrice" in response.data:
+            return float(response.data["fairPrice"])
+        return None
+
+
 # ----------------------------
 class MexcClient:
     def __init__(
@@ -73,27 +100,11 @@ class MexcClient:
         self.api_key, self.api_secret = api_key, api_secret 
         self.stop_bot = context.stop_bot
         self.stop_bot_iteration = context.stop_bot_iteration
-        self.bloc_async = context.bloc_async
+        # self.bloc_async = context.bloc_async
         self.connector = connector
         # info_handler.wrap_foreign_methods(self) # - eval так как перебьет декоратор реконекта
 
         self.api = MexcFuturesAPI(token, testnet=False)
-
-    # ----------------------------
-    # Публичные методы
-    @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")
-    async def get_instruments(self, session: Optional[aiohttp.ClientSession] = None) -> Optional[List[Dict]]:
-        response = await self.api.get_instruments(session)
-        if response and response.success and response.data:
-            return response.data  # возвращаем сразу список инструментов
-        return None
-
-    @async_reconnector(debug=True, stop_attr="stop_bot", stop_iter_attr="stop_bot_iteration")
-    async def get_fair_price(self, symbol: str, session: Optional[aiohttp.ClientSession] = None) -> Optional[float]:
-        response = await self.api.get_fair_price(symbol, session)
-        if response and response.success and response.data and "fairPrice" in response.data:
-            return float(response.data["fairPrice"])
-        return None
 
     # ----------------------------
     # Приватные методы

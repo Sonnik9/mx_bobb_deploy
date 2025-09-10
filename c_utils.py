@@ -233,17 +233,13 @@ class Utils:
             self,
             context: BotContext,
             info_handler: ErrorHandler,
-            preform_message: Callable,
-            get_realized_pnl: Callable,
-            chat_id: str
+            preform_message: Callable
         ):    
         info_handler.wrap_foreign_methods(self)
 
         self.context = context
         self.info_handler = info_handler    
         self.preform_message = preform_message   
-        self.get_realized_pnl = get_realized_pnl
-        self.chat_id = chat_id
 
     @staticmethod
     def parse_precision(symbols_info: list[dict], symbol: str) -> dict | None:
@@ -323,6 +319,7 @@ class Utils:
 
     def contracts_template(
         self,
+        user_id: int,
         symbol: str,
         pos_side: str,
         margin_size: float,   
@@ -358,7 +355,7 @@ class Utils:
                 "cur_time": int(time.time() * 1000),
             }
             self.preform_message(
-                chat_id=self.chat_id,
+                user_id=user_id,
                 marker=f"{key_label}_order_failed",
                 body=order_failed_body,
                 is_print=True
@@ -370,16 +367,17 @@ class Utils:
 # //////////////////////////        
     async def pnl_report(
         self,
+        user_id: int,
         symbol: str,
         pos_side: str,
         pos_data: dict,
-        cur_price: float,
+        get_realized_pnl: Callable,
         label: str
     ):
         cur_time = int(time.time() * 1000)
         start_time = pos_data.get("c_time")
 
-        realized_pnl = await self.get_realized_pnl(
+        realized_pnl = await get_realized_pnl(
             symbol=symbol,
             direction=1 if pos_side == "LONG" else 2,
             start_time=start_time,
@@ -404,7 +402,7 @@ class Utils:
         }
 
         self.preform_message(
-            chat_id=self.chat_id,
+            user_id=user_id,
             marker="report",
             body=body,
             is_print=True

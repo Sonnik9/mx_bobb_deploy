@@ -22,7 +22,7 @@ class Synchronizer:
         positions_update_frequency: float,
         exit: ExitControl,
         use_cache: bool,
-        chat_id: str
+        user_id: str
     ):
         self.info_handler = info_handler
         self.context = context
@@ -35,7 +35,7 @@ class Synchronizer:
         self.use_cache = use_cache
         self._update_lock = asyncio.Lock()
         
-        self.chat_id = chat_id        
+        self.user_id = user_id        
         self._first_update_done = False
 
         info_handler.wrap_foreign_methods(self)
@@ -138,7 +138,7 @@ class Synchronizer:
             pos_data["vol_assets"] = contracts * contract_size
 
             sign = -1 if pos_side == "SHORT" else 1
-            self.fin_settings = self.context.users_configs[self.chat_id]["config"]["fin_settings"]
+            self.fin_settings = self.context.users_configs[self.user_id]["config"]["fin_settings"]
             tp_price_levels = [
                 hold_price * (1 + sign * safe_float(x[0]) / 100)
                 for x in self.fin_settings.get("tp_levels_gen")
@@ -160,7 +160,7 @@ class Synchronizer:
                 "cur_sl": sl_price
             }
             self.preform_message(
-                chat_id=self.chat_id,
+                user_id=self.user_id,
                 marker="market_order_filled",
                 body=body,
                 is_print=True
