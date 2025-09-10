@@ -325,7 +325,7 @@ class Core:
         self.context.orders_updated_event.clear()
         print("[DEBUG] Order update event cleared, entering main signal loop")
 
-        instrume_update_interval = 10.0
+        instrume_update_interval = 300.0
         last_instrume_time = time.monotonic()
 
         while not self.context.stop_bot_iteration and not self.context.stop_bot:
