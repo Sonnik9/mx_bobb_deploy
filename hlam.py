@@ -142,3 +142,70 @@
 #         print("💥 Force exit")
 
 # # python -m API.MX.mx_bypass.api
+
+
+        # # --- Основной цикл итерации ---
+        # while not self.context.stop_bot_iteration and not self.context.stop_bot:
+        #     try:
+        #         signal_tasks_val = self.context.message_cache[-SIGNAL_PROCESSING_LIMIT:] if self.context.message_cache else None
+        #         if not signal_tasks_val:
+        #             # print("signal_tasks_val")
+        #             await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
+        #             continue
+
+        #         # --- Фильтруем сигналы по тексту и времени ---
+        #         filtered_signals: List[Tuple[str, int, str, dict]] = []  # msg, ts, chat_id, parsed_msg
+        #         current_time = time.time()
+        #         for msg, ts in signal_tasks_val:
+        #             parsed_msg, all_present = self.tg_watcher.parse_tg_message(msg)
+        #             if not all_present:
+        #                 print(f"[DEBUG] Parse error: {parsed_msg}")
+        #                 continue
+
+        #             symbol = parsed_msg.get("symbol")
+        #             cap = parsed_msg.get("cap")
+        #             if self.base_symbol and symbol != self.base_symbol:
+        #                 continue
+
+        #             debug_label = f"{symbol}_{self.direction}"
+        #             diff_sec = current_time - (ts / 1000)
+        #             if diff_sec >= SIGNAL_TIMEOUT:
+        #                 continue
+
+        #             for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+        #                 if num > 1:
+        #                     continue
+
+        #                 # --- Генерируем ключ для повторной отправки ---
+        #                 signal_key = f"{symbol}_{self.direction}_{chat_id}"
+        #                 last_sent = self.context.tg_signal_hash_cache.get(signal_key, 0)
+        #                 if current_time - last_sent < SIGNAL_REPEAT_TIMEOUT:
+        #                     continue
+
+        #                 self.context.tg_signal_hash_cache[signal_key] = current_time
+        #                 filtered_signals.append((msg, ts, chat_id, parsed_msg))
+
+        #         # --- Обработка сигналов ---
+        #         for message, last_timestamp, chat_id, parsed_msg in filtered_signals:
+        #             symbol = parsed_msg.get("symbol")
+        #             cap = parsed_msg.get("cap")
+        #             debug_label = f"{symbol}_{self.direction}"
+
+        #             # --- Создаём асинхронную задачу с авто-очисткой pending_open ---
+        #             asyncio.create_task(self.handle_signal(chat_id, symbol, cap, last_timestamp, debug_label))
+
+        #     except Exception as e:
+        #         err_msg = f"[ERROR] main loop: {e}\n" + traceback.format_exc()
+        #         self.info_handler.debug_error_notes(err_msg, is_print=True)
+
+        #     finally:
+        #         try:
+        #             for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
+        #                 if num > 1:
+        #                     continue
+        #                 await self.notifier.send_report_batches(chat_id=chat_id, batch_size=1)
+        #         except Exception as e:
+        #             err_msg = f"[ERROR] main finally block: {e}\n" + traceback.format_exc()
+        #             self.info_handler.debug_error_notes(err_msg, is_print=True)
+
+        #         await asyncio.sleep(MAIN_CYCLE_FREQUENCY)

@@ -259,7 +259,7 @@ class Utils:
         }
         Если символ не найден или данные пустые → None.
         """
-        symbol_data = next((item for item in symbols_info if item.get("symbol") == symbol), None)
+        symbol_data = next((item for item in symbols_info if item.get("symbol") == symbol or item.get("baseCoinName") + f"_{QUOTE_ASSET}" == symbol), None)
         if not symbol_data:
             return None
 

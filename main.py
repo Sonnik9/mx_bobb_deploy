@@ -15,6 +15,7 @@ from TRADING.entry import EntryControl
 from TRADING.exit import ExitControl
 from TRADING.tp import TPControl
 from aiogram import Bot, Dispatcher
+import json
 
 from c_sync import Synchronizer
 from c_log import ErrorHandler, log_time
@@ -27,6 +28,23 @@ SIGNAL_REPEAT_TIMEOUT = 5
 def force_exit(*args):
     print("💥 Принудительное завершение процесса")
     os._exit(1)  # немедленно убивает процесс
+
+def save_to_json(data: Optional[dict], filename="data.json"):
+    """
+    Сохраняет словарь/список в JSON-файл с отступами.
+
+    :param data: dict или list – данные для сохранения
+    :param filename: str – путь до файла (например, '/home/user/data.json')
+    """
+    try:
+        # Убедимся, что директория существует
+        # os.makedirs(os.path.dirname(filename), exist_ok=False)
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        print(f"Файл сохранён: {filename}")
+    except Exception as e:
+        print(f"Ошибка при сохранении: {e}")
 
 
 class Core:
@@ -283,13 +301,15 @@ class Core:
         try:
             self.instruments_data = await self.mx_client.get_instruments()
             if self.instruments_data:
-                # print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
+                # save_to_json(self.instruments_data)
+                print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
                 pass
             else:
                 self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
 
         except Exception as e:
             self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+        # return
 
         # --- Запуск наблюдателей ---
         self.tg_watcher.register_handler(tag=TEG_ANCHOR)
@@ -304,6 +324,9 @@ class Core:
         await self.context.orders_updated_event.wait()
         self.context.orders_updated_event.clear()
         print("[DEBUG] Order update event cleared, entering main signal loop")
+
+        instrume_update_interval = 10.0
+        last_instrume_time = time.monotonic()
 
         while not self.context.stop_bot_iteration and not self.context.stop_bot:
             try:
@@ -327,6 +350,7 @@ class Core:
                     self.context.tg_timing_cache.add(msg_key)
 
                     parsed_msg, all_present = self.tg_watcher.parse_tg_message(message)
+                    # print(parsed_msg)
                     if not all_present:
                         print(f"[DEBUG] Parse error: {parsed_msg}")
                         continue
@@ -375,73 +399,24 @@ class Core:
                     err_msg = f"[ERROR] main finally block: {e}\n" + traceback.format_exc()
                     self.info_handler.debug_error_notes(err_msg, is_print=True)
 
+                now = time.monotonic()
+
+                # обновление кэша
+                if now - last_instrume_time >= instrume_update_interval:
+                    try:
+                        self.instruments_data = await self.mx_client.get_instruments()
+                        if self.instruments_data:
+                            # save_to_json(self.instruments_data)
+                            print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
+                            pass
+                        else:
+                            self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+
+                    except Exception as e:
+                        self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
+                    last_instrume_time = now
+
                 await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
-
-        # # --- Основной цикл итерации ---
-        # while not self.context.stop_bot_iteration and not self.context.stop_bot:
-        #     try:
-        #         signal_tasks_val = self.context.message_cache[-SIGNAL_PROCESSING_LIMIT:] if self.context.message_cache else None
-        #         if not signal_tasks_val:
-        #             # print("signal_tasks_val")
-        #             await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
-        #             continue
-
-        #         # --- Фильтруем сигналы по тексту и времени ---
-        #         filtered_signals: List[Tuple[str, int, str, dict]] = []  # msg, ts, chat_id, parsed_msg
-        #         current_time = time.time()
-        #         for msg, ts in signal_tasks_val:
-        #             parsed_msg, all_present = self.tg_watcher.parse_tg_message(msg)
-        #             if not all_present:
-        #                 print(f"[DEBUG] Parse error: {parsed_msg}")
-        #                 continue
-
-        #             symbol = parsed_msg.get("symbol")
-        #             cap = parsed_msg.get("cap")
-        #             if self.base_symbol and symbol != self.base_symbol:
-        #                 continue
-
-        #             debug_label = f"{symbol}_{self.direction}"
-        #             diff_sec = current_time - (ts / 1000)
-        #             if diff_sec >= SIGNAL_TIMEOUT:
-        #                 continue
-
-        #             for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-        #                 if num > 1:
-        #                     continue
-
-        #                 # --- Генерируем ключ для повторной отправки ---
-        #                 signal_key = f"{symbol}_{self.direction}_{chat_id}"
-        #                 last_sent = self.context.tg_signal_hash_cache.get(signal_key, 0)
-        #                 if current_time - last_sent < SIGNAL_REPEAT_TIMEOUT:
-        #                     continue
-
-        #                 self.context.tg_signal_hash_cache[signal_key] = current_time
-        #                 filtered_signals.append((msg, ts, chat_id, parsed_msg))
-
-        #         # --- Обработка сигналов ---
-        #         for message, last_timestamp, chat_id, parsed_msg in filtered_signals:
-        #             symbol = parsed_msg.get("symbol")
-        #             cap = parsed_msg.get("cap")
-        #             debug_label = f"{symbol}_{self.direction}"
-
-        #             # --- Создаём асинхронную задачу с авто-очисткой pending_open ---
-        #             asyncio.create_task(self.handle_signal(chat_id, symbol, cap, last_timestamp, debug_label))
-
-        #     except Exception as e:
-        #         err_msg = f"[ERROR] main loop: {e}\n" + traceback.format_exc()
-        #         self.info_handler.debug_error_notes(err_msg, is_print=True)
-
-        #     finally:
-        #         try:
-        #             for num, (chat_id, user_cfg) in enumerate(self.context.users_configs.items(), start=1):
-        #                 if num > 1:
-        #                     continue
-        #                 await self.notifier.send_report_batches(chat_id=chat_id, batch_size=1)
-        #         except Exception as e:
-        #             err_msg = f"[ERROR] main finally block: {e}\n" + traceback.format_exc()
-        #             self.info_handler.debug_error_notes(err_msg, is_print=True)
-
-        #         await asyncio.sleep(MAIN_CYCLE_FREQUENCY)
 
     async def run_forever(self, debug: bool = True):
         """Основной перезапускаемый цикл Core."""

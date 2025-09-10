@@ -36,8 +36,6 @@ class Synchronizer:
         self._update_lock = asyncio.Lock()
         
         self.chat_id = chat_id        
-        self.fin_settings = self.context.users_configs[chat_id]["config"]["fin_settings"]
-        self.tp_levels = self.fin_settings["tp_levels_gen"]    
         self._first_update_done = False
 
         info_handler.wrap_foreign_methods(self)
@@ -140,13 +138,15 @@ class Synchronizer:
             pos_data["vol_assets"] = contracts * contract_size
 
             sign = -1 if pos_side == "SHORT" else 1
+            self.fin_settings = self.context.users_configs[self.chat_id]["config"]["fin_settings"]
             tp_price_levels = [
                 hold_price * (1 + sign * safe_float(x[0]) / 100)
-                for x in getattr(self, "tp_levels", [])
+                for x in self.fin_settings.get("tp_levels_gen")
                 if isinstance(x, (list, tuple)) and len(x) > 0
             ]
 
             sl_price = None
+            
             if self.fin_settings.get("sl") is not None:
                 sl_raw = hold_price * (1 - sign * abs(safe_float(self.fin_settings.get("sl"))) / 100)
                 sl_price = to_human_digit(safe_round(sl_raw, price_precision))

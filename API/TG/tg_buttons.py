@@ -263,14 +263,14 @@ class TelegramUserInterface:
                 for side, pos in symbol_data.items()
                 if side != "spec"
             ):
-                await message.answer("Торговля уже запущена или есть открытые позиции.", reply_markup=self.main_menu)
+                await message.answer("Бот уже работает либо есть открытые позиции", reply_markup=self.main_menu)
                 return
 
             cfg = self.context.users_configs[chat_id]
             if validate_user_config(cfg):
                 self.context.start_bot_iteration = True
                 self.context.stop_bot_iteration = False  # на всякий случай
-                await message.answer("✅ Торговля запущена", reply_markup=self.main_menu)
+                await message.answer("✅ Начало работы", reply_markup=self.main_menu)
             else:
                 await message.answer("❗ Сначала настройте конфиг полностью", reply_markup=self.main_menu)
 
@@ -292,7 +292,7 @@ class TelegramUserInterface:
             if self.context.start_bot_iteration:
                 self.context.start_bot_iteration = False
                 self.context.stop_bot_iteration = True
-                self.context.users_configs = {}  # сброс конфигов
+                # self.context.users_configs = {}  # сброс конфигов
                 await message.answer("⛔ Торговля остановлена", reply_markup=self.main_menu)
             else:
                 await message.answer("Данная опция недоступна, поскольку торговля еще не начата.", reply_markup=self.main_menu)
