@@ -301,9 +301,7 @@ class Core:
         try:
             self.instruments_data = await self.mx_client.get_instruments()
             if self.instruments_data:
-                # save_to_json(self.instruments_data)
                 print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
-                pass
             else:
                 self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
 
@@ -405,11 +403,7 @@ class Core:
                 if now - last_instrume_time >= instrume_update_interval:
                     try:
                         self.instruments_data = await self.mx_client.get_instruments()
-                        if self.instruments_data:
-                            # save_to_json(self.instruments_data)
-                            # print(f"[DEBUG] Instruments fetched: {len(self.instruments_data)} items")
-                            pass
-                        else:
+                        if not self.instruments_data:
                             self.info_handler.debug_error_notes(f"[ERROR] Failed to fetch instruments: {e}", is_print=True)
 
                     except Exception as e:
